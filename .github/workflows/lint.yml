@@ -12,18 +12,26 @@ jobs:
   ruff:
     name: "Ruff"
     runs-on: "ubuntu-latest"
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [ 3.11 ]
+        poetry-version: [ 1.7.1 ]
+        os: [ ubuntu-latest ]
     steps:
         - name: "Checkout the repository"
-          uses: "actions/checkout@v4.1.1"
+          uses: actions/checkout@v4
 
         - name: "Set up Python"
-          uses: actions/setup-python@v5.0.0
+          uses: actions/setup-python@v5
           with:
             python-version: "3.11"
             cache: "pip"
 
-        - name: "Install requirements"
-          run: python3 -m pip install -r requirements.txt
+        - name: Run image
+          uses: abatilo/actions-poetry@v2
+          with:
+            poetry-version: ${{ matrix.poetry-version }}
 
         - name: "Run"
-          run: python3 -m ruff check .
+          run: poetry run ruff check .
