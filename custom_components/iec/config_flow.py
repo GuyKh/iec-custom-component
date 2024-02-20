@@ -13,7 +13,6 @@ from iec_api.models.exceptions import IECError
 
 from homeassistant.const import CONF_TOKEN
 from homeassistant.data_entry_flow import FlowResult
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import CONF_USER_ID, CONF_OTP, DOMAIN
 
