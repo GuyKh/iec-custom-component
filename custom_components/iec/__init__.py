@@ -6,7 +6,7 @@ https://github.com/ludeeus/integration_blueprint
 from __future__ import annotations
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_USERNAME, Platform
+from homeassistant.const import CONF_USERNAME, CONF_TOKEN, Platform
 from homeassistant.core import HomeAssistant
 
 from iec_api.iec_client import IecClient
@@ -22,9 +22,11 @@ PLATFORMS: list[Platform] = [
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up this integration using UI."""
     hass.data.setdefault(DOMAIN, {})
+    client = IecClient(user_id=entry.data[CONF_USERNAME])
+    client.load_jwt_token(entry.data[CONF_TOKEN])
     hass.data[DOMAIN][entry.entry_id] = coordinator = IecDataUpdateCoordinator(
         hass=hass,
-        client=IecClient(user_id=entry.data[CONF_USERNAME])
+        client=client
     )
     # https://developers.home-assistant.io/docs/integration_fetching_data#coordinated-single-api-poll-for-data-for-all-entities
     await coordinator.async_config_entry_first_refresh()

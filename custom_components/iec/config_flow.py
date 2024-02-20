@@ -149,7 +149,9 @@ class IecFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> FlowResult:
         """Handle reauthorization request from Electra Smart."""
-        self._api = IecClient(async_get_clientsession(self.hass), entry_data[CONF_USER_ID])
+        self._api = IecClient(entry_data[CONF_USER_ID])
+        if entry_data[CONF_TOKEN]:
+            self._api.load_jwt_token(entry_data[CONF_TOKEN])
         self._user_id = entry_data[CONF_USER_ID]
         return await self.async_step_reauth_confirm()
 
