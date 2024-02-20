@@ -3,9 +3,6 @@ from __future__ import annotations
 
 import voluptuous as vol
 from homeassistant import config_entries
-from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
-from homeassistant.helpers import selector
-from homeassistant.helpers.aiohttp_client import async_create_clientsession
 
 from collections.abc import Mapping
 import logging
@@ -13,14 +10,12 @@ from typing import Any
 
 from iec_api.iec_client import IecClient
 from iec_api.models.exceptions import IECError
-import voluptuous as vol
 
-from homeassistant import config_entries
 from homeassistant.const import CONF_TOKEN
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .const import CONF_USER_ID, CONF_OTP, DOMAIN, LOGGER, DOMAIN
+from .const import CONF_USER_ID, CONF_OTP, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -91,7 +86,7 @@ class IecFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         assert isinstance(self._api, IecClient)
 
         try:
-            resp = await self._api.login_with_id(self._user_id)
+            await self._api.login_with_id()
         except IECError as exp:
             _LOGGER.error("Failed to connect to API: %s", exp)
             return self._show_setup_form(user_input, {"base": "cannot_connect"}, "user")
