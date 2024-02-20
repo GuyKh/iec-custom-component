@@ -2,17 +2,26 @@
     "config": {
         "step": {
             "user": {
-                "description": "If you need help with the configuration have a look here: https://github.com/ludeeus/integration_blueprint",
+                "description": "Enter your IEC User ID (תעודת זהות)",,
                 "data": {
-                    "username": "Username",
-                    "password": "Password"
+                    "user_id": "User ID"
+                }
+            },
+            "one_time_password": {
+                "data": {
+                     "one_time_password": "One Time Password (OTP)"
                 }
             }
         },
+        "abort": {
+            "already_configured": "User ID number already configured"
+        },
         "error": {
-            "auth": "Username/Password is wrong.",
-            "connection": "Unable to connect to the server.",
-            "unknown": "Unknown error occurred."
+            "cannot_connect": "Cannot connect to IEC server",
+            "invalid_auth": "Wrong one time password key",
+            "invalid_phone_number": "Either wrong User ID or unregistered user",
+            "connection": "Unable to connect to the server",
+            "unknown": "Unknown error occurred"
         }
     }
 }

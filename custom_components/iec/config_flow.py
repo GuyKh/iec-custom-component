@@ -82,7 +82,7 @@ class IecFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             await self.async_set_unique_id(self._user_id)
             self._abort_if_unique_id_configured()
 
-        assert isinstance(self._api, IecClient)
+        self._api = IecClient(self._user_id)
 
         try:
             await self._api.login_with_id()
@@ -125,7 +125,7 @@ class IecFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             user_input: dict[str, Any] | None = None,
             errors: dict[str, str] | None = None,
     ) -> FlowResult:
-        """Ask the verification code to the user."""
+        """Ask the otp code to the user."""
         if errors is None:
             errors = {}
 
@@ -138,7 +138,7 @@ class IecFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             self,
             errors: dict[str, str] | None = None,
     ) -> FlowResult:
-        """Show the verification_code form to the user."""
+        """Show the otp_code form to the user."""
 
         return self.async_show_form(
             step_id=CONF_OTP,
@@ -147,7 +147,7 @@ class IecFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> FlowResult:
-        """Handle reauthorization request from Electra Smart."""
+        """Handle reauthorization request from IEC."""
         self._api = IecClient(entry_data[CONF_USER_ID])
         if entry_data[CONF_TOKEN]:
             self._api.load_jwt_token(entry_data[CONF_TOKEN])
@@ -174,4 +174,4 @@ class IecFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
     async def _test_credentials(self) -> None:
         """Validate credentials."""
         client = self._api
-        await client.get_customer()
+        client.check_token()
