@@ -6,6 +6,12 @@ from typing import Any  # noqa: UP035
 from homeassistant.components.sensor import SensorEntity, SensorEntityDescription, SensorDeviceClass
 from homeassistant.const import UnitOfEnergy
 
+from homeassistant_historical_sensor import (
+    HistoricalSensor,
+    HistoricalState,
+    PollUpdateMixin,
+)
+
 from .const import DOMAIN, ATTR_BP_NUMBER, ATTR_METER_NUMBER, ATTR_METER_TYPE, ATTR_METER_CODE, \
     ATTR_METER_IS_ACTIVE, ATTR_METER_READINGS
 from .coordinator import IecDataUpdateCoordinator
@@ -83,3 +89,19 @@ class IecSensor(IecEntity, SensorEntity):
     def native_value(self) -> str:
         """Return the native value of the sensor."""
         return self.coordinator.data.get(self._meter_number)[ATTR_METER_READINGS]
+
+
+    async def async_update_historical(self):
+        # Fill `HistoricalSensor._attr_historical_states` with HistoricalState's
+        # This functions is equivaled to the `Sensor.async_update` from
+        # HomeAssistant core
+        result = self.coordinator.data.get(self._meter_number)[ATTR_METER_NUMBER]
+        hist_states = [
+            HistoricalState(
+                state=state,
+                dt=dtutil.as_local(dt)
+            )
+            for (dt, state) in result
+        ]
+
+        self._attr_historical_states = hist_states
