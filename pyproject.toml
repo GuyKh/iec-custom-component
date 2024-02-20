@@ -13,7 +13,7 @@ homeassistant = "2023.12.0"
 ruff = "^0.2.2"
 
 [tool.poetry.group.dev.dependencies]
-iec-api = "^0.1.4"
+iec-api = "^0.1.5"
 
 [build-system]
 requires = ["poetry-core"]
