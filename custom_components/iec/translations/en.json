@@ -8,8 +8,9 @@
                 }
             },
             "one_time_password": {
+                "description": "Enter your One Time Password (OTP)",
                 "data": {
-                     "one_time_password": "One Time Password (OTP)"
+                     "one_time_password": "e.g. 123456"
                 }
             }
         },
