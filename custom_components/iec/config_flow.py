@@ -82,10 +82,11 @@ class IecFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             await self.async_set_unique_id(self._user_id)
             self._abort_if_unique_id_configured()
 
-        self._api = IecClient(self._user_id)
+        api = IecClient(self._user_id)
+        self._api = api
 
         try:
-            self._api.login_with_id()
+            await self.hass.async_add_executor_job(api.login_with_id())
         except IECError as exp:
             _LOGGER.error("Failed to connect to API: %s", exp)
             return self._show_setup_form(user_input, {"base": "cannot_connect"}, "user")
@@ -102,7 +103,7 @@ class IecFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         assert isinstance(self._otp, str)
 
         try:
-            token = self._api.verify_otp(self._otp)
+            token = self.hass.async_add_executor_job(self._api.verify_otp, self._otp)
         except IECError as exp:
             _LOGGER.error("Failed to connect to API: %s", exp)
             return self._show_setup_form(
@@ -150,7 +151,7 @@ class IecFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         """Handle reauthorization request from IEC."""
         self._api = IecClient(entry_data[CONF_USER_ID])
         if entry_data[CONF_TOKEN]:
-            self._api.load_jwt_token(entry_data[CONF_TOKEN])
+            await self.hass.async_add_executor_job(self._api.load_jwt_token, entry_data[CONF_TOKEN])
         self._user_id = entry_data[CONF_USER_ID]
         return await self.async_step_reauth_confirm()
 
