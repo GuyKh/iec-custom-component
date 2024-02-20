@@ -33,5 +33,8 @@ jobs:
           with:
             poetry-version: ${{ matrix.poetry-version }}
 
-        - name: "Run"
+        - name: Install the project dependencies
+          run: poetry install
+
+        - name: "Run Ruff Lint"
           run: poetry run ruff check .
