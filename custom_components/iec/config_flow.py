@@ -85,7 +85,7 @@ class IecFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         self._api = IecClient(self._user_id)
 
         try:
-            await self._api.login_with_id()
+            self._api.login_with_id()
         except IECError as exp:
             _LOGGER.error("Failed to connect to API: %s", exp)
             return self._show_setup_form(user_input, {"base": "cannot_connect"}, "user")
@@ -102,7 +102,7 @@ class IecFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         assert isinstance(self._otp, str)
 
         try:
-            token = await self._api.verify_otp(self._otp)
+            token = self._api.verify_otp(self._otp)
         except IECError as exp:
             _LOGGER.error("Failed to connect to API: %s", exp)
             return self._show_setup_form(
