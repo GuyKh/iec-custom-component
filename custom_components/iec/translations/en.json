@@ -2,7 +2,7 @@
     "config": {
         "step": {
             "user": {
-                "description": "Enter your IEC User ID (תעודת זהות)",,
+                "description": "Enter your IEC User ID (תעודת זהות)",
                 "data": {
                     "user_id": "User ID"
                 }
