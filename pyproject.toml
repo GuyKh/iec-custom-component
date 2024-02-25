@@ -11,7 +11,7 @@ python = "^3.11"
 colorlog = "^6.8.2"
 homeassistant = "2023.12.0"
 ruff = "^0.2.2"
-iec-api = "^0.1.5"
+iec-api = "0.2.1"
 
 
 [build-system]

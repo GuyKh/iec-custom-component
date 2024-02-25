@@ -25,9 +25,9 @@ class IecDataUpdateCoordinator(DataUpdateCoordinator):
     config_entry: ConfigEntry
 
     def __init__(
-        self,
-        hass: HomeAssistant,
-        client: IecClient,
+            self,
+            hass: HomeAssistant,
+            client: IecClient,
     ) -> None:
         """Initialize."""
         self.client = client
@@ -41,27 +41,33 @@ class IecDataUpdateCoordinator(DataUpdateCoordinator):
     async def _async_update_data(self):
         """Update data via library."""
         try:
-            customer = self.client.get_customer()
+            customer = await self.client.get_customer()
+            contract = await self.client.get_default_contract(customer.bp_number)
 
             data = {}
-            devices = self.client.get_devices(customer.bp_number)
+            devices = await self.client.get_devices(contract.contract_id)
             for device in devices:
                 readings_list = []
                 for i in range(2, -1, -1):
                     date_str = (datetime.now() - timedelta(days=i)).strftime('%Y-%m-%d')
-                    readings = self.client.get_remote_reading(device.device_number, int(device.device_code),
-                                                              date_str, date_str, resolution=ReadingResolution.DAILY)
+                    readings = await self.client.get_remote_reading(device.device_number, int(device.device_code),
+                                                                    date_str, date_str,
+                                                                    resolution=ReadingResolution.DAILY)
+
+                    # sort readings in descending order by date
+                    readings.data.sort(reverse=True, key=lambda e: e.date)
+
                     for reading in readings.data:
-                        v = (reading.date.strftime('%Y-%m-%dT%H:%M:%S.%f'),  reading.value)
+                        v = (reading.date.strftime('%Y-%m-%dT%H:%M:%S.%f'), reading.value)
                         readings_list.append(v)
                 data[device.device_number] = {
-                                            ATTR_BP_NUMBER: customer.bp_number,
-                                            ATTR_METER_NUMBER: device.device_number,
-                                            ATTR_METER_TYPE: device.device_type,
-                                            ATTR_METER_CODE: device.device_code,
-                                            ATTR_METER_IS_ACTIVE: device.is_active,
-                                            ATTR_METER_READINGS: readings_list
-                                          }
+                    ATTR_BP_NUMBER: customer.bp_number,
+                    ATTR_METER_NUMBER: device.device_number,
+                    ATTR_METER_TYPE: device.device_type,
+                    ATTR_METER_CODE: device.device_code,
+                    ATTR_METER_IS_ACTIVE: device.is_active,
+                    ATTR_METER_READINGS: readings_list
+                }
 
             return data
         except IECLoginError as exception:

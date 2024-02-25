@@ -23,7 +23,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up this integration using UI."""
     hass.data.setdefault(DOMAIN, {})
     client = IecClient(user_id=entry.data[CONF_USERNAME])
-    client.load_jwt_token(entry.data[CONF_TOKEN])
+    await client.load_jwt_token(entry.data[CONF_TOKEN])
     hass.data[DOMAIN][entry.entry_id] = coordinator = IecDataUpdateCoordinator(
         hass=hass,
         client=client

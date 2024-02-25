@@ -30,7 +30,7 @@ class IecFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         self._description_placeholders = None
         self._otp: str | None = None
         self._token: str | None = None
-        self._api: IecClient | None = None
+        self._apiClient: IecClient | None = None
 
     async def async_step_user(
             self,
@@ -82,11 +82,11 @@ class IecFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             await self.async_set_unique_id(self._user_id)
             self._abort_if_unique_id_configured()
 
-        api = IecClient(self._user_id)
-        self._api = api
+        client = IecClient(self._user_id)
+        self._apiClient = client
 
         try:
-            await self.hass.async_add_executor_job(api.login_with_id())
+            await client.login_with_id()
         except IECError as exp:
             _LOGGER.error("Failed to connect to API: %s", exp)
             return self._show_setup_form(user_input, {"base": "cannot_connect"}, "user")
@@ -98,12 +98,12 @@ class IecFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> FlowResult:
         self._otp = user_input[CONF_OTP]
 
-        assert isinstance(self._api, IecClient)
+        assert isinstance(self._apiClient, IecClient)
         assert isinstance(self._user_id, str)
         assert isinstance(self._otp, str)
 
         try:
-            token = self.hass.async_add_executor_job(self._api.verify_otp, self._otp)
+            token = await self._apiClient.verify_otp(self._otp)
         except IECError as exp:
             _LOGGER.error("Failed to connect to API: %s", exp)
             return self._show_setup_form(
@@ -149,9 +149,9 @@ class IecFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> FlowResult:
         """Handle reauthorization request from IEC."""
-        self._api = IecClient(entry_data[CONF_USER_ID])
+        self._apiClient = IecClient(entry_data[CONF_USER_ID])
         if entry_data[CONF_TOKEN]:
-            await self.hass.async_add_executor_job(self._api.load_jwt_token, entry_data[CONF_TOKEN])
+            await self._apiClient.load_jwt_token(entry_data[CONF_TOKEN])
         self._user_id = entry_data[CONF_USER_ID]
         return await self.async_step_reauth_confirm()
 
@@ -174,5 +174,5 @@ class IecFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def _test_credentials(self) -> None:
         """Validate credentials."""
-        client = self._api
-        client.check_token()
+        client = self._apiClient
+        await client.check_token()

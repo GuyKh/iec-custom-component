@@ -1,23 +1,26 @@
 """Sensor platform for iec."""
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any  # noqa: UP035
 
-from homeassistant.components.sensor import SensorEntity, SensorEntityDescription, SensorDeviceClass
+from homeassistant.components.sensor import SensorEntity, SensorEntityDescription, SensorDeviceClass, SensorStateClass
 from homeassistant.const import UnitOfEnergy
-
 
 from .const import DOMAIN, ATTR_BP_NUMBER, ATTR_METER_NUMBER, ATTR_METER_TYPE, ATTR_METER_CODE, \
     ATTR_METER_IS_ACTIVE, ATTR_METER_READINGS
 from .coordinator import IecDataUpdateCoordinator
 from .entity import IecEntity
 
-SENSOR_DESCRIPTION = SensorEntityDescription(
-    key="iec",
-    icon="mdi:format-quote-close",
-    state_class=SensorDeviceClass.ENERGY,
-    native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR
-)
+
+def _get_sensor_description(key: str) -> SensorEntityDescription:
+    """Get sensor description."""
+    return SensorEntityDescription(
+        key=f"iec-meter-{key}",
+        name=f"IEC Meter {key}",
+        device_class=SensorDeviceClass.ENERGY,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        state_class=SensorStateClass.TOTAL)
 
 
 async def async_setup_entry(hass, entry, async_add_devices):
@@ -26,7 +29,7 @@ async def async_setup_entry(hass, entry, async_add_devices):
     async_add_devices(
         IecSensor(
             coordinator=coordinator,
-            entity_description=SENSOR_DESCRIPTION,
+            entity_description=_get_sensor_description(key),
             meter_number=coordinator.data.get(key)[ATTR_METER_NUMBER],
             meter_type=coordinator.data.get(key)[ATTR_METER_TYPE],
             meter_code=coordinator.data.get(key)[ATTR_METER_CODE],
@@ -81,9 +84,10 @@ class IecSensor(IecEntity, SensorEntity):
         return self.attrs
 
     @property
-    def native_value(self) -> str:
+    def native_value(self) -> float:
         """Return the native value of the sensor."""
-        return self.coordinator.data.get(self._meter_number)[ATTR_METER_READINGS]
+        last_reading: list[tuple[datetime, float]] = self.coordinator.data.get(self._meter_number)[ATTR_METER_READINGS]
+        return last_reading[0][1]
 
     async def async_update_historical(self):
         """Update Historical States."""
