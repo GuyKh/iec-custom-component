@@ -1,0 +1,14 @@
+{
+  "domain": "iec",
+  "name": "Israeli Electric Company (IEC)",
+  "codeowners": [
+    "@guykh"
+  ],
+  "config_flow": true,
+  "dependencies": ["recorder"],
+  "documentation": "https://github.com/guykh/iec-custom-component",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/ludeeus/iec-custom-component/issues",
+  "requirements": ["iec-api==0.2.1"],
+  "version": "0.0.1"
+}
