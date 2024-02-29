@@ -129,7 +129,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def _async_create_iec_entry(self, data: dict[str, Any]) -> FlowResult:
         """Create the config entry."""
         return self.async_create_entry(
-            title=f"iec ({data[CONF_USERNAME]})",
+            title=f"IEC ({data[CONF_USERNAME]})",
             data=data,
         )
 

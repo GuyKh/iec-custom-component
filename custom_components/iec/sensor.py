@@ -100,16 +100,16 @@ async def async_setup_entry(
 
     coordinator: IecApiCoordinator = hass.data[DOMAIN][entry.entry_id]
     entities: list[IecSensor] = []
-    invoices = coordinator.data.values()
-    for invoice in invoices:
-        sensors: tuple[IecEntityDescription, ...] = ELEC_SENSORS
+    contracts = coordinator.data.keys()
+    for contract_id in contracts:
+        sensors_desc: tuple[IecEntityDescription, ...] = ELEC_SENSORS
 
-        for sensor in sensors:
+        for sensor_desc in sensors_desc:
             entities.append(
                 IecSensor(
                     coordinator,
-                    sensor,
-                    invoice.contract_number
+                    sensor_desc,
+                    contract_id
                 )
             )
 
