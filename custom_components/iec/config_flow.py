@@ -101,7 +101,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         errors: dict[str, str] = {}
         _LOGGER.debug(f"User input in mfa: {user_input}")
-        if self.data.get(CONF_TOTP_SECRET) is not None:
+        if user_input is not None and user_input.get(CONF_TOTP_SECRET) is not None:
             data = {**self.data, **user_input}
             errors = await _validate_login(self.hass, data)
             if not errors:
