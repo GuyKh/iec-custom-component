@@ -18,18 +18,18 @@ from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from iec_api.models.invoice import Invoice
 
-from .const import DOMAIN
+from .const import DOMAIN, ILS
 from .coordinator import IecApiCoordinator
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class IecEntityDescriptionMixin:
     """Mixin values for required keys."""
 
     value_fn: Callable[[Invoice], str | float]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class IecEntityDescription(SensorEntityDescription, IecEntityDescriptionMixin):
     """Class describing IEC sensors entities."""
 
@@ -51,8 +51,7 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         key="elec_forecasted_cost",
         name="Current bill electric forecasted cost",
         device_class=SensorDeviceClass.MONETARY,
-        native_unit_of_measurement="ILS",
-        suggested_unit_of_measurement="ILS",
+        native_unit_of_measurement=ILS,
         state_class=SensorStateClass.TOTAL,
         suggested_display_precision=0,
         value_fn=lambda data: data.forecasted_cost,
@@ -74,8 +73,8 @@ ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         key="iec_last_cost",
         name="Last IEC bill electric cost",
         device_class=SensorDeviceClass.MONETARY,
-        native_unit_of_measurement="USD",
-        suggested_unit_of_measurement="USD",
+        native_unit_of_measurement=ILS,
+        suggested_unit_of_measurement=ILS,
         state_class=SensorStateClass.TOTAL,
         suggested_display_precision=0,
         value_fn=lambda data: data.amount_origin,

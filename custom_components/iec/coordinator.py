@@ -1,5 +1,6 @@
 """Coordinator to handle IEC connections."""
 import itertools
+import json
 import logging
 import socket
 from datetime import datetime, timedelta
@@ -21,6 +22,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from iec_api.iec_client import IecClient
 from iec_api.models.exceptions import IECError
 from iec_api.models.invoice import Invoice
+from iec_api.models.jwt import JWT
 from iec_api.models.remote_reading import ReadingResolution, RemoteReading
 
 from .const import DOMAIN, CONF_USER_ID
@@ -53,8 +55,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[int, Invoice]]):
             self._entry_data[CONF_USER_ID],
             session=aiohttp_client.async_get_clientsession(hass, family=socket.AF_INET)
         )
-
-        self.api.load_jwt_token(self._entry_data[CONF_API_TOKEN])
+        self._first_load: bool = False
 
         @callback
         def _dummy_listener() -> None:
@@ -70,12 +71,16 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[int, Invoice]]):
             self,
     ) -> dict[int, Invoice]:
         """Fetch data from API endpoint."""
+        if not self._first_load:
+            await self.api.load_jwt_token(JWT.from_dict(json.loads(self._entry_data[CONF_API_TOKEN])))
+
         try:
             # First thing first, check the token and refresh if needed.
             old_token = self.api.get_token()
             await self.api.check_token()
             new_token = self.api.get_token()
             if old_token != new_token:
+                _LOGGER.debug("Token refreshed")
                 new_data = {**self._entry_data, CONF_API_TOKEN: new_token}
                 self.hass.config_entries.async_update_entry(entry=self._config_entry,
                                                             data=new_data)
@@ -101,9 +106,11 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[int, Invoice]]):
 
     async def _insert_statistics(self) -> None:
         if not self._is_smart_meter:
+            _LOGGER.info("IEC Contract doesn't contain Smart Meters, not adding statistics")
             # Support only smart meters at the moment
             return
 
+        _LOGGER.info(f"Updating statistics for IEC Contract {self._contract_id}")
         devices = await self.api.get_devices(self._contract_id)
         month_ago_time_str = (datetime.now() - timedelta(weeks=4)).strftime('%Y-%m-%d')
 

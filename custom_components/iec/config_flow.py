@@ -8,7 +8,7 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant import config_entries
-from homeassistant.const import CONF_USERNAME, CONF_API_TOKEN
+from homeassistant.const import CONF_API_TOKEN
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
@@ -16,7 +16,7 @@ from iec_api.iec_client import IecClient
 from iec_api.models.exceptions import IECError
 from iec_api.models.jwt import JWT
 
-from .const import CONF_TOTP_SECRET, DOMAIN, CONF_USER_ID, CONF_API_CLIENT
+from .const import CONF_TOTP_SECRET, DOMAIN, CONF_USER_ID
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -28,15 +28,13 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 
 
 async def _validate_login(
-        hass: HomeAssistant, login_data: dict[str, Any]
+        hass: HomeAssistant, login_data: dict[str, Any], api: IecClient
 ) -> dict[str, str]:
     """Validate login data and return any errors."""
     assert login_data is not None
-    assert login_data.get(CONF_API_CLIENT) is not None
+    assert api is not None
     assert login_data.get(CONF_USER_ID) is not None
     assert login_data.get(CONF_TOTP_SECRET) or login_data.get(CONF_API_TOKEN) is not None
-
-    api: IecClient = login_data.get(CONF_API_CLIENT)
 
     if login_data.get(CONF_TOTP_SECRET):
         try:
@@ -68,6 +66,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Initialize a new IECConfigFlow."""
         self.reauth_entry: config_entries.ConfigEntry | None = None
         self.data: dict[str, Any] | None = None
+        self.client: IecClient | None = None
 
     async def async_step_user(
             self, user_input: dict[str, Any] | None = None
@@ -85,7 +84,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             _LOGGER.debug(f"User input in step_user: {user_input}")
             self.data = user_input
             try:
-                self.data[CONF_API_CLIENT] = IecClient(self.data[CONF_USER_ID], async_create_clientsession(self.hass))
+                self.client = IecClient(self.data[CONF_USER_ID], async_create_clientsession(self.hass))
             except ValueError as err:
                 errors["base"] = "invalid_id"
                 _LOGGER.error(f"Error while creating IEC client: {err}")
@@ -104,15 +103,15 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         assert self.data is not None
         assert self.data.get(CONF_USER_ID) is not None
 
-        client: IecClient = self.data[CONF_API_CLIENT]
+        client: IecClient = self.client
 
         errors: dict[str, str] = {}
         _LOGGER.debug(f"User input in mfa: {user_input}")
         if user_input is not None and user_input.get(CONF_TOTP_SECRET) is not None:
             data = {**self.data, **user_input}
-            errors = await _validate_login(self.hass, data)
+            errors = await _validate_login(self.hass, data, client)
             if not errors:
-                self.data[CONF_API_TOKEN] = json.dumps(client.get_token().to_dict())
+                data[CONF_API_TOKEN] = json.dumps(client.get_token().to_dict())
                 return self._async_create_iec_entry(data)
 
         if errors:
@@ -137,7 +136,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def _async_create_iec_entry(self, data: dict[str, Any]) -> FlowResult:
         """Create the config entry."""
         return self.async_create_entry(
-            title=f"IEC ({data[CONF_USERNAME]})",
+            title=f"IEC ({data[CONF_USER_ID]})",
             data=data,
         )
 
