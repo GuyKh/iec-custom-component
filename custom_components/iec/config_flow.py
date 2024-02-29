@@ -77,7 +77,8 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             self._async_abort_entries_match(
                 {
-                    CONF_USER_ID: user_input[CONF_USER_ID]
+                    CONF_USER_ID: user_input[CONF_USER_ID],
+                    CONF_API_TOKEN: user_input[CONF_API_TOKEN]
                 }
             )
 
@@ -93,11 +94,12 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> FlowResult:
         """Handle MFA step."""
         assert self.data is not None
+        assert self.data.get(CONF_USER_ID) is not None
 
         self.data[CONF_API_CLIENT] = IecClient(self.data[CONF_USER_ID], async_create_clientsession(self.hass))
 
         errors: dict[str, str] = {}
-        if self.data.get(CONF_API_TOKEN) is not None:
+        if self.data.get(CONF_TOTP_SECRET) is not None:
             data = {**self.data, **user_input}
             errors = await _validate_login(self.hass, data)
             if not errors:

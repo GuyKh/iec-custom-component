@@ -3,8 +3,7 @@ import itertools
 import logging
 import socket
 from datetime import datetime, timedelta, date
-from types import MappingProxyType
-from typing import Any, cast
+from typing import cast
 
 from homeassistant.components.recorder import get_instance
 from homeassistant.components.recorder.models import StatisticData, StatisticMetaData
@@ -13,6 +12,7 @@ from homeassistant.components.recorder.statistics import (
     get_last_statistics,
     statistics_during_period,
 )
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfEnergy, CONF_API_TOKEN
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed
@@ -34,7 +34,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[int, Invoice]]):
     def __init__(
             self,
             hass: HomeAssistant,
-            entry_data: MappingProxyType[str, Any],
+            config_entry: ConfigEntry,
     ) -> None:
         """Initialize the data handler."""
         super().__init__(
@@ -45,15 +45,16 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[int, Invoice]]):
             # Refresh every 4h to be at most 4h behind.
             update_interval=timedelta(hours=4),
         )
-        self.bp_number = None
-        self.contract_id = None
+        self._config_entry = config_entry
+        self._bp_number = None
+        self._contract_id = None
+        self._entry_data = config_entry.data
         self.api = IecClient(
-            entry_data[CONF_USER_ID],
+            self._entry_data[CONF_USER_ID],
             session=aiohttp_client.async_get_clientsession(hass, family=socket.AF_INET)
         )
 
-        self.api.load_jwt_token(entry_data[CONF_API_TOKEN])
-        self.entry_data = entry_data
+        self.api.load_jwt_token(self._entry_data[CONF_API_TOKEN])
 
         @callback
         def _dummy_listener() -> None:
@@ -71,34 +72,39 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[int, Invoice]]):
         """Fetch data from API endpoint."""
         try:
             # First thing first, check the token and refresh if needed.
+            old_token = self.api.get_token()
             await self.api.check_token()
+            new_token = self.api.get_token()
+            if old_token != new_token:
+                new_data = {**self._entry_data, CONF_API_TOKEN: new_token}
+                self.hass.config_entries.async_update_entry(entry=self._config_entry,
+                                                            data=new_data)
         except IECError as err:
             raise ConfigEntryAuthFailed from err
 
-        if not self.bp_number:
+        if not self._bp_number:
             customer = await self.api.get_customer()
-            self.bp_number = customer.bp_number
+            self._bp_number = customer.bp_number
 
-        if not self.contract_id:
-            contract = await self.api.get_default_contract(self.bp_number)
-            self.is_smart_meter = contract.smart_meter
-            self.contract_id = contract.contract_id
+        if not self._contract_id:
+            contract = await self.api.get_default_contract(self._bp_number)
+            self._is_smart_meter = contract.smart_meter
+            self._contract_id = contract.contract_id
 
         # Because IEC API provides historical usage/cost with a delay of a couple of days
         # we need to insert data into statistics.
         await self._insert_statistics()
-        billing_invoices = await self.api.get_billing_invoices(self.bp_number, self.contract_id)
-        billing_invoices.invoices.sort(key=lambda invoice: date.fromisoformat(invoice.full_date), reverse=True)
+        billing_invoices = await self.api.get_billing_invoices(self._bp_number, self._contract_id)
+        billing_invoices.invoices.sort(key=lambda inv: date.fromisoformat(inv.full_date), reverse=True)
         invoice = billing_invoices.invoices[0]
         return {invoice.contract_number: invoice}
 
     async def _insert_statistics(self) -> None:
-        if not self.is_smart_meter:
+        if not self._is_smart_meter:
             # Support only smart meters at the moment
             return
 
-        devices = await self.api.get_devices(self.contract_id)
-        day_ago_time_str = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+        devices = await self.api.get_devices(self._contract_id)
         month_ago_time_str = (datetime.now() - timedelta(weeks=4)).strftime('%Y-%m-%d')
 
         for device in devices:
@@ -109,21 +115,18 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[int, Invoice]]):
                 get_last_statistics, self.hass, 1, consumption_statistic_id, True, set()
             )
 
-            consumption_sum = 0.0
-            last_stats_time = None
-
             if not last_stat:
                 _LOGGER.debug("Updating statistic for the first time")
                 readings = await self.api.get_remote_reading(device.device_number, int(device.device_code),
                                                              month_ago_time_str,
                                                              month_ago_time_str, ReadingResolution.DAILY,
-                                                             self.contract_id)
+                                                             self._contract_id)
             else:
                 last_stat_time = last_stat[consumption_statistic_id][0]["start"]
                 from_date_str = datetime.fromtimestamp(last_stat_time).strftime('%Y-%m-%d')
                 readings = await self.api.get_remote_reading(device.device_number, int(device.device_code),
                                                              from_date_str, from_date_str,
-                                                             ReadingResolution.DAILY, self.contract_id)
+                                                             ReadingResolution.DAILY, self._contract_id)
 
             if not readings or not readings.data:
                 _LOGGER.debug("No recent usage data. Skipping update")
