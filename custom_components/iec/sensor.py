@@ -1,4 +1,4 @@
-"""Support for Opower sensors."""
+"""Support for IEC sensors."""
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -31,12 +31,12 @@ class IecEntityDescriptionMixin:
 
 @dataclass(frozen=True)
 class IecEntityDescription(SensorEntityDescription, IecEntityDescriptionMixin):
-    """Class describing Opower sensors entities."""
+    """Class describing IEC sensors entities."""
 
 
 # suggested_display_precision=0 for all sensors since
-# Opower provides 0 decimal points for all these.
-# (for the statistics in the energy dashboard Opower does provide decimal points)
+# IEC provides 0 decimal points for all these.
+# (for the statistics in the energy dashboard IEC does provide decimal points)
 SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
     IecEntityDescription(
         key="elec_forecasted_usage",
@@ -117,7 +117,7 @@ async def async_setup_entry(
 
 
 class IecSensor(CoordinatorEntity[IecApiCoordinator], SensorEntity):
-    """Representation of an Opower sensor."""
+    """Representation of an IEC sensor."""
 
     entity_description: IecEntityDescription
 

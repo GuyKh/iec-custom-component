@@ -1,4 +1,4 @@
-""""Config flow for Opower integration."""
+""""Config flow for IEC integration."""
 from __future__ import annotations
 
 import json
@@ -60,12 +60,12 @@ async def _validate_login(
 
 
 class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for Opower."""
+    """Handle a config flow for IEC."""
 
     VERSION = 1
 
     def __init__(self) -> None:
-        """Initialize a new OpowerConfigFlow."""
+        """Initialize a new IECConfigFlow."""
         self.reauth_entry: config_entries.ConfigEntry | None = None
         self.data: dict[str, Any] | None = None
 

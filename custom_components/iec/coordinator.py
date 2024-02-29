@@ -1,10 +1,10 @@
-"""Coordinator to handle Opower connections."""
+"""Coordinator to handle IEC connections."""
 import itertools
 import logging
 import socket
 from datetime import datetime, timedelta, date
 from types import MappingProxyType
-from typing import Any, cast, Dict
+from typing import Any, cast
 
 from homeassistant.components.recorder import get_instance
 from homeassistant.components.recorder.models import StatisticData, StatisticMetaData
@@ -41,7 +41,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[int, Invoice]]):
             hass,
             _LOGGER,
             name="Iec",
-            # Data is updated daily on Opower.
+            # Data is updated daily on IEC.
             # Refresh every 4h to be at most 4h behind.
             update_interval=timedelta(hours=4),
         )

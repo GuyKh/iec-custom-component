@@ -1,4 +1,4 @@
-"""Constants for the Opower integration."""
+"""Constants for the IEC integration."""
 
 DOMAIN = "iec"
 
