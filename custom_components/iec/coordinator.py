@@ -2,7 +2,7 @@
 import itertools
 import logging
 import socket
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta
 from typing import cast
 
 from homeassistant.components.recorder import get_instance
