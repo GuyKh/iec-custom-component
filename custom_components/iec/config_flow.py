@@ -84,7 +84,14 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             _LOGGER.debug(f"User input in step_user: {user_input}")
             self.data = user_input
-            return await self.async_step_mfa()
+            try:
+                self.data[CONF_API_CLIENT] = IecClient(self.data[CONF_USER_ID], async_create_clientsession(self.hass))
+            except ValueError as err:
+                errors["base"] = "invalid_id"
+                _LOGGER.error(f"Error while creating IEC client: {err}")
+
+            if not errors:
+                return await self.async_step_mfa()
 
         return self.async_show_form(
             step_id="user", data_schema=STEP_USER_DATA_SCHEMA, errors=errors
@@ -97,9 +104,6 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         assert self.data is not None
         assert self.data.get(CONF_USER_ID) is not None
 
-        if self.data.get(CONF_API_CLIENT) is None:
-            self.data[CONF_API_CLIENT] = IecClient(self.data[CONF_USER_ID], async_create_clientsession(self.hass))
-
         client: IecClient = self.data[CONF_API_CLIENT]
 
         errors: dict[str, str] = {}
@@ -109,7 +113,6 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors = await _validate_login(self.hass, data)
             if not errors:
                 self.data[CONF_API_TOKEN] = json.dumps(client.get_token().to_dict())
-                self.data.pop(CONF_TOTP_SECRET)
                 return self._async_create_iec_entry(data)
 
         if errors:
