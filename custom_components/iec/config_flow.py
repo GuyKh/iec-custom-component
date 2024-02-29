@@ -75,13 +75,14 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Handle the initial step."""
         errors: dict[str, str] = {}
         if user_input is not None:
-            self._async_abort_entries_match(
-                {
-                    CONF_USER_ID: user_input[CONF_USER_ID],
-                    CONF_API_TOKEN: user_input[CONF_API_TOKEN]
-                }
-            )
+            # self._async_abort_entries_match(
+            #     {
+            #         CONF_USER_ID: user_input[CONF_USER_ID],
+            #         CONF_API_TOKEN: user_input[CONF_API_TOKEN]
+            #     }
+            # )
 
+            _LOGGER.debug(f"User input in step_user: {user_input}")
             self.data = user_input
             return await self.async_step_mfa()
 
@@ -99,6 +100,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.data[CONF_API_CLIENT] = IecClient(self.data[CONF_USER_ID], async_create_clientsession(self.hass))
 
         errors: dict[str, str] = {}
+        _LOGGER.debug(f"User input in mfa: {user_input}")
         if self.data.get(CONF_TOTP_SECRET) is not None:
             data = {**self.data, **user_input}
             errors = await _validate_login(self.hass, data)

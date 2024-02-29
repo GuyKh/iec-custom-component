@@ -2,10 +2,9 @@
   "config": {
     "step": {
       "user": {
+        "description": "Enter the user ID of your IEC account.",
         "data": {
-          "utility": "Utility name",
-          "username": "[%key:common::config_flow::data::username%]",
-          "password": "[%key:common::config_flow::data::password%]"
+          "user_id": "[%key:common::config_flow::data::username%]"
         }
       },
       "mfa": {
@@ -17,8 +16,7 @@
       "reauth_confirm": {
         "title": "[%key:common::config_flow::title::reauth%]",
         "data": {
-          "username": "[%key:common::config_flow::data::username%]",
-          "password": "[%key:common::config_flow::data::password%]",
+          "user_id": "[%key:common::config_flow::data::username%]",
           "totp_secret": "TOTP Secret"
         }
       }
