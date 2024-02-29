@@ -97,7 +97,10 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         assert self.data is not None
         assert self.data.get(CONF_USER_ID) is not None
 
-        self.data[CONF_API_CLIENT] = IecClient(self.data[CONF_USER_ID], async_create_clientsession(self.hass))
+        if self.data.get(CONF_API_CLIENT) is None:
+            self.data[CONF_API_CLIENT] = IecClient(self.data[CONF_USER_ID], async_create_clientsession(self.hass))
+
+        client: IecClient = self.data[CONF_API_CLIENT]
 
         errors: dict[str, str] = {}
         _LOGGER.debug(f"User input in mfa: {user_input}")
@@ -105,7 +108,6 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data = {**self.data, **user_input}
             errors = await _validate_login(self.hass, data)
             if not errors:
-                client: IecClient = self.data[CONF_API_CLIENT]
                 self.data[CONF_API_TOKEN] = json.dumps(client.get_token().to_dict())
                 self.data.pop(CONF_TOTP_SECRET)
                 return self._async_create_iec_entry(data)
@@ -120,6 +122,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             schema = {}
 
         schema[vol.Required(CONF_TOTP_SECRET)] = str
+        await client.login_with_id()
 
         return self.async_show_form(
             step_id="mfa",
