@@ -95,7 +95,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[int, Invoice]]):
         # we need to insert data into statistics.
         await self._insert_statistics()
         billing_invoices = await self.api.get_billing_invoices(self._bp_number, self._contract_id)
-        billing_invoices.invoices.sort(key=lambda inv: date.fromisoformat(inv.full_date), reverse=True)
+        billing_invoices.invoices.sort(key=lambda inv: inv.full_date, reverse=True)
         invoice = billing_invoices.invoices[0]
         return {invoice.contract_number: invoice}
 
