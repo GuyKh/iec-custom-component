@@ -55,7 +55,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[int, Invoice]]):
             self._entry_data[CONF_USER_ID],
             session=aiohttp_client.async_get_clientsession(hass, family=socket.AF_INET)
         )
-        self._first_load: bool = False
+        self._first_load: bool = True
 
         @callback
         def _dummy_listener() -> None:
@@ -71,10 +71,13 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[int, Invoice]]):
             self,
     ) -> dict[int, Invoice]:
         """Fetch data from API endpoint."""
-        if not self._first_load:
+        if self._first_load:
+            _LOGGER.debug("Loading API token from config entry")
             await self.api.load_jwt_token(JWT.from_dict(json.loads(self._entry_data[CONF_API_TOKEN])))
 
+        self._first_load = False
         try:
+            _LOGGER.debug("Checking if API token needs to be refreshed")
             # First thing first, check the token and refresh if needed.
             old_token = self.api.get_token()
             await self.api.check_token()
