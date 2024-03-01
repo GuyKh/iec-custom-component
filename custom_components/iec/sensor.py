@@ -18,7 +18,7 @@ from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from iec_api.models.invoice import Invoice
 
-from .const import DOMAIN, ILS
+from .const import DOMAIN, ILS, CONF_FUTURE_CONSUMPTION, CONF_INVOICE
 from .coordinator import IecApiCoordinator
 
 
@@ -43,18 +43,20 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         name="Current bill electric forecasted usage",
         device_class=SensorDeviceClass.ENERGY,
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
-        state_class=SensorStateClass.TOTAL,
+        # state_class=SensorStateClass.TOTAL,
         suggested_display_precision=0,
-        value_fn=lambda data: data.forecasted_usage,
+        value_fn=lambda data: data[CONF_FUTURE_CONSUMPTION].future_consumption,
     ),
     IecEntityDescription(
         key="elec_forecasted_cost",
         name="Current bill electric forecasted cost",
         device_class=SensorDeviceClass.MONETARY,
         native_unit_of_measurement=ILS,
-        state_class=SensorStateClass.TOTAL,
+        # state_class=SensorStateClass.TOTAL,
         suggested_display_precision=0,
-        value_fn=lambda data: data.forecasted_cost,
+        # The API doesn't provide future *cost* so we can try to estimate it by the previous consumption
+        value_fn=lambda data: data[CONF_FUTURE_CONSUMPTION].future_consumption *
+                              (data.invoice.consumption / data.invoice.amount_origin)
     ),
 )
 
@@ -64,10 +66,9 @@ ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         name="Last IEC bill electric usage to date",
         device_class=SensorDeviceClass.ENERGY,
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
-        # Not TOTAL_INCREASING because it can decrease for accounts with solar
-        state_class=SensorStateClass.TOTAL,
+        # state_class=SensorStateClass.TOTAL,  # No point of adding statistics with something that changes monthly
         suggested_display_precision=0,
-        value_fn=lambda data: data.consumption,
+        value_fn=lambda data: data[CONF_INVOICE].consumption,
     ),
     IecEntityDescription(
         key="iec_last_cost",
@@ -75,11 +76,10 @@ ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         device_class=SensorDeviceClass.MONETARY,
         native_unit_of_measurement=ILS,
         suggested_unit_of_measurement=ILS,
-        state_class=SensorStateClass.TOTAL,
+        # state_class=SensorStateClass.TOTAL,  # No point of adding statistics with something that changes monthly
         suggested_display_precision=0,
-        value_fn=lambda data: data.amount_origin,
+        value_fn=lambda data: data[CONF_INVOICE].amount_origin,
     ),
-
     IecEntityDescription(
         key="iec_last_number_of_days",
         name="Last IEC bill length in days",
@@ -87,7 +87,13 @@ ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfTime.DAYS,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
-        value_fn=lambda data: data.days_period,
+        value_fn=lambda data: data[CONF_INVOICE].days_period,
+    ),
+    IecEntityDescription(
+        key="iec_bill_date",
+        name="Last IEC bill date",
+        device_class=SensorDeviceClass.DATE,
+        value_fn=lambda data: data[CONF_INVOICE].to_date.date(),
     ),
 )
 
@@ -101,6 +107,10 @@ async def async_setup_entry(
     entities: list[IecSensor] = []
     contracts = coordinator.data.keys()
     for contract_id in contracts:
+        # if coordinator.is_smart_meter:
+        #     sensors_desc: tuple[IecEntityDescription, ...] = ELEC_SENSORS + SMART_ELEC_SENSORS
+        # else:
+        #     sensors_desc: tuple[IecEntityDescription, ...] = ELEC_SENSORS
         sensors_desc: tuple[IecEntityDescription, ...] = ELEC_SENSORS
 
         for sensor_desc in sensors_desc:

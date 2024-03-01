@@ -112,6 +112,10 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors = await _validate_login(self.hass, data, client)
             if not errors:
                 data[CONF_API_TOKEN] = json.dumps(client.get_token().to_dict())
+
+                if data.get(CONF_TOTP_SECRET):
+                    data.pop(CONF_TOTP_SECRET)
+
                 return self._async_create_iec_entry(data)
 
         if errors:
@@ -136,7 +140,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def _async_create_iec_entry(self, data: dict[str, Any]) -> FlowResult:
         """Create the config entry."""
         return self.async_create_entry(
-            title=f"IEC ({data[CONF_USER_ID]})",
+            title=f"IEC Account ({data[CONF_USER_ID]})",
             data=data,
         )
 

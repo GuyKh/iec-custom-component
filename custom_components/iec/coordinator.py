@@ -25,7 +25,7 @@ from iec_api.models.invoice import Invoice
 from iec_api.models.jwt import JWT
 from iec_api.models.remote_reading import ReadingResolution, RemoteReading
 
-from .const import DOMAIN, CONF_USER_ID
+from .const import DOMAIN, CONF_USER_ID, CONF_INVOICE, CONF_FUTURE_CONSUMPTION
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -93,7 +93,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[int, Invoice]]):
 
         if not self._contract_id:
             contract = await self.api.get_default_contract(self._bp_number)
-            self._is_smart_meter = contract.smart_meter
+            self.is_smart_meter = contract.smart_meter
             self._contract_id = contract.contract_id
 
         # Because IEC API provides historical usage/cost with a delay of a couple of days
@@ -101,11 +101,23 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[int, Invoice]]):
         await self._insert_statistics()
         billing_invoices = await self.api.get_billing_invoices(self._bp_number, self._contract_id)
         billing_invoices.invoices.sort(key=lambda inv: inv.full_date, reverse=True)
-        invoice = billing_invoices.invoices[0]
-        return {invoice.contract_number: invoice}
+        last_invoice = billing_invoices.invoices[0]
+
+        future_consumption = None
+        if self.is_smart_meter:
+            devices = await self.api.get_devices(self._contract_id)
+            for device in devices:
+                remote_reading = await self.api.get_remote_reading(device.device_number, int(device.device_code),
+                                                                   last_invoice.to_date,
+                                                                   last_invoice.to_date, ReadingResolution.MONTHLY,
+                                                                   self._contract_id)
+                if remote_reading:
+                    future_consumption = remote_reading.future_consumption_info
+
+        return {last_invoice.contract_number: {CONF_INVOICE: last_invoice, CONF_FUTURE_CONSUMPTION: future_consumption}}
 
     async def _insert_statistics(self) -> None:
-        if not self._is_smart_meter:
+        if not self.is_smart_meter:
             _LOGGER.info("IEC Contract doesn't contain Smart Meters, not adding statistics")
             # Support only smart meters at the moment
             return

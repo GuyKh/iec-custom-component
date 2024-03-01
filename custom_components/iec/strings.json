@@ -2,22 +2,24 @@
   "config": {
     "step": {
       "user": {
-        "description": "Enter the user ID of your IEC account.",
+        "title": "User ID",
+        "description": "Enter the user ID of your IEC account",
         "data": {
           "user_id": "[%key:common::config_flow::data::username%]"
         }
       },
       "mfa": {
-        "description": "The TOTP secret below is not one of the 6 digit time-based numeric codes. It is a string of around 16 characters containing the shared secret that enables your authenticator app to generate the correct time-based code at the appropriate time. See the documentation.",
+        "title": "OTP",
+        "description": "Enter your One Time Password (OTP)",
         "data": {
-          "totp_secret": "TOTP Secret"
+          "totp_secret": "e.g. 123456"
         }
       },
       "reauth_confirm": {
         "title": "[%key:common::config_flow::title::reauth%]",
         "data": {
           "user_id": "[%key:common::config_flow::data::username%]",
-          "totp_secret": "TOTP Secret"
+          "totp_secret": "e.g. 123456"
         }
       }
     },
