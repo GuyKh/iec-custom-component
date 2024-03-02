@@ -12,9 +12,12 @@ _Integration to integrate with [iec-custom-component][iec-custom-component]._
 
 **This integration will set up the following platforms.**
 
+![Example Image][exampleimg]
+
+
 Platform | Description
 -- | --
-`sensor` | Show info from blueprint API.
+`sensor` | Show info from IEC invoice and meters.
 
 ## Installation
 
