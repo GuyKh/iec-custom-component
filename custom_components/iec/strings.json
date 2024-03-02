@@ -5,7 +5,7 @@
         "title": "User ID",
         "description": "Enter the user ID of your IEC account",
         "data": {
-          "user_id": "[%key:common::config_flow::data::username%]"
+          "user_id": "User ID"
         }
       },
       "mfa": {
@@ -18,7 +18,7 @@
       "reauth_confirm": {
         "title": "[%key:common::config_flow::title::reauth%]",
         "data": {
-          "user_id": "[%key:common::config_flow::data::username%]",
+          "user_id": "User ID",
           "totp_secret": "e.g. 123456"
         }
       }
