@@ -1,19 +1,19 @@
 {
-  "config": {
-    "step": {
-      "user": {
-        "title": "User ID",
-        "description": "Enter the user ID of your IEC account",
-        "data": {
-          "user_id": "User ID"
-        }
-      },
-      "mfa": {
-        "title": "OTP",
-        "description": "Enter your One Time Password (OTP)",
-        "data": {
-          "totp_secret": "e.g. 123456"
-        }
+    "config": {
+        "step": {
+            "user": {
+                "title": "IEC Account ID",
+                "description": "Enter your IEC User ID (תעודת זהות)",
+                "data": {
+                    "user_id": "User ID"
+                }
+            },
+        "mfa": {
+          "title": "OTP",
+          "description": "Enter your One Time Password (OTP)",
+          "data": {
+            "totp_secret": "e.g. 123456"
+          }
       },
       "reauth_confirm": {
         "title": "[%key:common::config_flow::title::reauth%]",
