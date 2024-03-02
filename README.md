@@ -8,7 +8,7 @@
 [![BuyMeCoffee][buymecoffeebadge]][buymecoffee]
 
 
-_Integration to integrate with [iec-custom-component][iec-custom-component]._
+_Integration to integrate with [IEC API][iec]._
 
 **This integration will set up the following platforms.**
 
@@ -44,7 +44,7 @@ If you want to contribute to this please read the [Contribution guidelines](CONT
 
 ***
 
-[iec-custom-component]: https://github.com/guykh/iec-custom-component
+[iec]: https://www.iec.co.il/home
 [buymecoffee]: https://www.buymeacoffee.com/guykh
 [buymecoffeebadge]: https://img.shields.io/badge/buy%20me%20a%20coffee-donate-yellow.svg?style=for-the-badge
 [commits-shield]: https://img.shields.io/github/commit-activity/y/guykh/iec-custom-component.svg?style=for-the-badge
