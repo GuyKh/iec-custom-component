@@ -1,0 +1,36 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "title": "IEC Account ID",
+                "description": "Enter your IEC User ID (תעודת זהות)",
+                "data": {
+                    "user_id": "User ID"
+                }
+            },
+        "mfa": {
+          "title": "OTP",
+          "description": "Enter your One Time Password (OTP)",
+          "data": {
+            "totp_secret": "e.g. 123456"
+          }
+      },
+      "reauth_confirm": {
+        "title": "[%key:common::config_flow::title::reauth%]",
+        "data": {
+          "user_id": "User ID",
+          "totp_secret": "e.g. 123456"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
+      "invalid_auth": "[%key:common::config_flow::error::invalid_auth%]",
+      "invalid_id": "Invalid Israeli ID"
+    },
+    "abort": {
+      "already_configured": "[%key:common::config_flow::abort::already_configured_service%]",
+      "reauth_successful": "[%key:common::config_flow::abort::reauth_successful%]"
+    }
+  }
+}
