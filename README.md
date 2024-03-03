@@ -36,6 +36,17 @@ Manual:
 
 ## Configuration is done in the UI
 
+## Logs
+To view logs in debug add this to `configuration.yaml`:
+
+```yaml
+logger:
+  default: info
+  logs:
+    ...
+    custom_components.iec: debug
+```
+
 <!---->
 
 ## Contributions are welcome!
