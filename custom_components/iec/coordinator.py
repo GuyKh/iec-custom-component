@@ -178,8 +178,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[int, Invoice]]):
             grouped_new_readings_by_hour = itertools.groupby(new_readings,
                                                              key=lambda reading: reading.date
                                                              .replace(minute=0, second=0, microsecond=0))
-            readings_by_hour: dict[datetime, float] = {k: sum(reading.value for reading in v)
-                                                       for k, v in grouped_new_readings_by_hour.items()}
+            readings_by_hour: dict[datetime, float] = {key: sum(reading.value for reading in list(group))
+                                                       for key, group in grouped_new_readings_by_hour}
 
             consumption_metadata = StatisticMetaData(
                 has_mean=False,
