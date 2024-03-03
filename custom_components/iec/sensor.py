@@ -96,7 +96,7 @@ ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
     ),
     IecEntityDescription(
         key="iec_last_meter_reading",
-        name="Last Bill Meter Reading",
+        name="Last IEC bill meter reading",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
