@@ -164,7 +164,12 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[int, Invoice]]):
                 None,
                 {"sum"},
             )
-            consumption_sum = cast(float, stats[consumption_statistic_id][0]["sum"])
+
+            if not stats.get(consumption_statistic_id):
+                _LOGGER.debug("No recent usage data")
+                consumption_sum = 0
+            else:
+                consumption_sum = cast(float, stats[consumption_statistic_id][0]["sum"])
 
             new_readings: list[RemoteReading] = filter(lambda reading:
                                                        reading.date >= datetime.fromtimestamp(last_stat_time),
