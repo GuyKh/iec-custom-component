@@ -127,7 +127,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[int, Invoice]]):
 
         _LOGGER.info(f"Updating statistics for IEC Contract {self._contract_id}")
         devices = await self.api.get_devices(self._contract_id)
-        month_ago_time_str = (datetime.now() - timedelta(weeks=4)).strftime('%Y-%m-%d')
+        month_ago_time = (datetime.now() - timedelta(weeks=4))
 
         for device in devices:
             id_prefix = f"meter_{device.device_number}"
@@ -140,12 +140,12 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[int, Invoice]]):
             if not last_stat:
                 _LOGGER.debug("Updating statistic for the first time")
                 readings = await self.api.get_remote_reading(device.device_number, int(device.device_code),
-                                                             month_ago_time_str,
-                                                             month_ago_time_str, ReadingResolution.DAILY,
+                                                             month_ago_time,
+                                                             month_ago_time, ReadingResolution.DAILY,
                                                              self._contract_id)
             else:
                 last_stat_time = last_stat[consumption_statistic_id][0]["start"]
-                from_date_str = datetime.fromtimestamp(last_stat_time).strftime('%Y-%m-%d')
+                from_date_str = datetime.fromtimestamp(last_stat_time)
                 readings = await self.api.get_remote_reading(device.device_number, int(device.device_code),
                                                              from_date_str, from_date_str,
                                                              ReadingResolution.DAILY, self._contract_id)
