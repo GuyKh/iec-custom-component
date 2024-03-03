@@ -2,6 +2,8 @@ name: AutoTag
 
 on:
   push:
+    branches:
+      - main
     paths:
       - 'custom_components/iec/manifest.json'
 
