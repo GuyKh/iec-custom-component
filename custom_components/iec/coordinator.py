@@ -139,6 +139,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[int, Invoice]]):
 
             if not last_stat:
                 _LOGGER.debug("Updating statistic for the first time")
+                last_stat_time = 0
                 readings = await self.api.get_remote_reading(device.device_number, int(device.device_code),
                                                              month_ago_time,
                                                              month_ago_time, ReadingResolution.DAILY,
