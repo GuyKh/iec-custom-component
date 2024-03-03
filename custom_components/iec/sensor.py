@@ -77,7 +77,7 @@ ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         native_unit_of_measurement=ILS,
         suggested_unit_of_measurement=ILS,
         state_class=SensorStateClass.TOTAL,
-        suggested_display_precision=0,
+        suggested_display_precision=2,
         value_fn=lambda data: data[CONF_INVOICE].amount_origin,
     ),
     IecEntityDescription(
@@ -99,7 +99,9 @@ ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         key="iec_last_meter_reading",
         name="Last Bill Meter Reading",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
+        suggested_display_precision=0,
         value_fn=lambda data: data[CONF_INVOICE].meter_readings[0].reading,
     ),
 )
