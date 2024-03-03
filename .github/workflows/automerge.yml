@@ -17,6 +17,7 @@ on:
     types:
       - completed
   status: {}
+  
 jobs:
   automerge:
     runs-on: ubuntu-latest
@@ -26,3 +27,6 @@ jobs:
         uses: "pascalgn/automerge-action@v0.16.2"
         env:
           GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+          MERGE_METHOD: "squash"
+          UPDATE_RETRY_SLEEP: 30000
+
