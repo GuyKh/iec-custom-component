@@ -28,5 +28,5 @@ jobs:
         env:
           GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
           MERGE_METHOD: "squash"
-          UPDATE_RETRY_SLEEP: 30000
+          UPDATE_RETRY_SLEEP: "30000"
 
