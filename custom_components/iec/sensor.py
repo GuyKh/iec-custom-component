@@ -66,7 +66,7 @@ ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         name="Last IEC bill electric usage to date",
         device_class=SensorDeviceClass.ENERGY,
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
-        # state_class=SensorStateClass.TOTAL,  # No point of adding statistics with something that changes monthly
+        state_class=SensorStateClass.TOTAL,
         suggested_display_precision=0,
         value_fn=lambda data: data[CONF_INVOICE].consumption,
     ),
@@ -76,8 +76,8 @@ ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         device_class=SensorDeviceClass.MONETARY,
         native_unit_of_measurement=ILS,
         suggested_unit_of_measurement=ILS,
-        # state_class=SensorStateClass.TOTAL,  # No point of adding statistics with something that changes monthly
-        suggested_display_precision=0,
+        state_class=SensorStateClass.TOTAL,
+        suggested_display_precision=2,
         value_fn=lambda data: data[CONF_INVOICE].amount_origin,
     ),
     IecEntityDescription(
@@ -94,6 +94,15 @@ ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         name="Last IEC bill date",
         device_class=SensorDeviceClass.DATE,
         value_fn=lambda data: data[CONF_INVOICE].to_date.date(),
+    ),
+    IecEntityDescription(
+        key="iec_last_meter_reading",
+        name="Last Bill Meter Reading",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        suggested_display_precision=0,
+        value_fn=lambda data: data[CONF_INVOICE].meter_readings[0].reading,
     ),
 )
 
