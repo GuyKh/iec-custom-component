@@ -9,6 +9,6 @@
   "documentation": "https://github.com/guykh/iec-custom-component",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/ludeeus/iec-custom-component/issues",
-  "requirements": ["iec-api==0.2.3"],
-  "version": "0.0.7"
+  "requirements": ["iec-api==0.2.4"],
+  "version": "0.0.8"
 }
