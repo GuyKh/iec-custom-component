@@ -1,0 +1,33 @@
+name: Create Tag on Version Update
+
+on:
+  push:
+    paths:
+      - 'custom_components/iec/manifest.json'
+
+jobs:
+  create-tag:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Extract Previous Tag
+        id: extract-previous-tag
+        run: echo "::set-output name=prev_version::$(git describe --abbrev=0 --tags)"
+
+      - name: Extract Current Version
+        id: extract-current-version
+        run: echo "::set-output name=current_version::$(jq -r .version custom_components/iec/manifest.json)"
+
+      - name: Check Version Change
+        id: check-version-change
+        run: echo "::set-output name=version_changed::${{ steps.extract-previous-version.outputs.tag != steps.extract-current-version.outputs.current_version }}"
+
+      - uses: rickstaa/action-create-tag@v1
+        id: create-tag
+        if: steps.check-version-change.outputs.version_changed == 'true'
+        with:
+          tag: "{{ steps.extract-current-version.outputs.current_version }}"
+          tag_exists_error: true
