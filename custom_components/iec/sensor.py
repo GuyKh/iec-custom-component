@@ -75,7 +75,6 @@ ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         name="Last IEC bill electric cost",
         device_class=SensorDeviceClass.MONETARY,
         native_unit_of_measurement=ILS,
-        suggested_unit_of_measurement=ILS,
         state_class=SensorStateClass.TOTAL,
         suggested_display_precision=2,
         value_fn=lambda data: data[CONF_INVOICE].amount_origin,
