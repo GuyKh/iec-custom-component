@@ -4,8 +4,9 @@ import json
 import logging
 import socket
 from datetime import datetime, timedelta
-from typing import cast
+from typing import cast  # noqa: UP035
 
+import pytz
 from homeassistant.components.recorder import get_instance
 from homeassistant.components.recorder.models import StatisticData, StatisticMetaData
 from homeassistant.components.recorder.statistics import (
@@ -23,14 +24,15 @@ from iec_api.iec_client import IecClient
 from iec_api.models.exceptions import IECError
 from iec_api.models.invoice import Invoice
 from iec_api.models.jwt import JWT
-from iec_api.models.remote_reading import ReadingResolution, RemoteReading
+from iec_api.models.remote_reading import ReadingResolution, RemoteReading, FutureConsumptionInfo
 
-from .const import DOMAIN, CONF_USER_ID, CONF_INVOICE, CONF_FUTURE_CONSUMPTION
+from .const import DOMAIN, CONF_USER_ID
 
 _LOGGER = logging.getLogger(__name__)
+TIMEZONE = pytz.timezone("Asia/Jerusalem")
 
 
-class IecApiCoordinator(DataUpdateCoordinator[dict[int, Invoice]]):
+class IecApiCoordinator(DataUpdateCoordinator[dict[int, tuple[Invoice, FutureConsumptionInfo | None]]]):
     """Handle fetching IEC data, updating sensors and inserting statistics."""
 
     def __init__(
@@ -69,7 +71,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[int, Invoice]]):
 
     async def _async_update_data(
             self,
-    ) -> dict[int, Invoice]:
+    ) -> dict[int, tuple[Invoice, FutureConsumptionInfo | None]]:
         """Fetch data from API endpoint."""
         if self._first_load:
             _LOGGER.debug("Loading API token from config entry")
@@ -117,7 +119,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[int, Invoice]]):
                 if remote_reading:
                     future_consumption = remote_reading.future_consumption_info
 
-        return {last_invoice.contract_number: {CONF_INVOICE: last_invoice, CONF_FUTURE_CONSUMPTION: future_consumption}}
+        return {last_invoice.contract_number: (last_invoice, future_consumption)}
 
     async def _insert_statistics(self) -> None:
         if not self.is_smart_meter:
@@ -130,7 +132,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[int, Invoice]]):
         month_ago_time = (datetime.now() - timedelta(weeks=4))
 
         for device in devices:
-            id_prefix = f"meter_{device.device_number}"
+            id_prefix = f"iec_meter_{device.device_number}"
             consumption_statistic_id = f"{DOMAIN}:{id_prefix}_energy_consumption"
 
             last_stat = await get_instance(self.hass).async_add_executor_job(
@@ -139,6 +141,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[int, Invoice]]):
 
             if not last_stat:
                 _LOGGER.debug("Updating statistic for the first time")
+                _LOGGER.debug(f"Fetching consumption from {month_ago_time.strftime('%Y-%m-%d %H:%M:%S')}")
                 last_stat_time = 0
                 readings = await self.api.get_remote_reading(device.device_number, int(device.device_code),
                                                              month_ago_time,
@@ -146,9 +149,14 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[int, Invoice]]):
                                                              self._contract_id)
             else:
                 last_stat_time = last_stat[consumption_statistic_id][0]["start"]
-                from_date_str = datetime.fromtimestamp(last_stat_time)
+                # API returns daily data, so need to increase the start date by 1 day to get the next day
+                from_date = datetime.fromtimestamp(last_stat_time) + timedelta(days=1)
+                if (datetime.today() - from_date).days <= 0:
+                    from_date = TIMEZONE.localize(datetime.today())
+
+                _LOGGER.debug(f"Fetching consumption from {from_date.strftime('%Y-%m-%d %H:%M:%S')}")
                 readings = await self.api.get_remote_reading(device.device_number, int(device.device_code),
-                                                             from_date_str, from_date_str,
+                                                             from_date, from_date,
                                                              ReadingResolution.DAILY, self._contract_id)
 
             if not readings or not readings.data:
@@ -173,7 +181,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[int, Invoice]]):
                 consumption_sum = cast(float, stats[consumption_statistic_id][0]["sum"])
 
             new_readings: list[RemoteReading] = filter(lambda reading:
-                                                       reading.date >= datetime.fromtimestamp(last_stat_time),
+                                                       reading.date >= TIMEZONE.localize(
+                                                           datetime.fromtimestamp(last_stat_time)),
                                                        readings.data)
 
             grouped_new_readings_by_hour = itertools.groupby(new_readings,
@@ -185,7 +194,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[int, Invoice]]):
             consumption_metadata = StatisticMetaData(
                 has_mean=False,
                 has_sum=True,
-                name=f"iec meter {device.device_number} consumption",
+                name=f"IEC Meter {device.device_number} Consumption",
                 source=DOMAIN,
                 statistic_id=consumption_statistic_id,
                 unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR

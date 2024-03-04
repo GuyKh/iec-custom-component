@@ -18,7 +18,7 @@ from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from iec_api.models.invoice import Invoice
 
-from .const import DOMAIN, ILS, CONF_FUTURE_CONSUMPTION, CONF_INVOICE
+from .const import DOMAIN, ILS
 from .coordinator import IecApiCoordinator
 
 
@@ -34,9 +34,18 @@ class IecEntityDescription(SensorEntityDescription, IecEntityDescriptionMixin):
     """Class describing IEC sensors entities."""
 
 
-# suggested_display_precision=0 for all sensors since
-# IEC provides 0 decimal points for all these.
-# (for the statistics in the energy dashboard IEC does provide decimal points)
+def get_previous_bill_kwh_price(invoice: Invoice) -> float:
+    """Calculate the previous bill's kilowatt-hour price by dividing the consumption by the original amount.
+
+    :param invoice: An instance of the Invoice class.
+    :return: The previous bill's kilowatt-hour price as a float.
+    """
+
+    if not invoice.consumption or not invoice.amount_origin:
+        return 0
+    return invoice.consumption/invoice.amount_origin
+
+
 SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
     IecEntityDescription(
         key="elec_forecasted_usage",
@@ -45,7 +54,7 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         # state_class=SensorStateClass.TOTAL,
         suggested_display_precision=0,
-        value_fn=lambda data: data[CONF_FUTURE_CONSUMPTION].future_consumption,
+        value_fn=lambda data: data[1].future_consumption,
     ),
     IecEntityDescription(
         key="elec_forecasted_cost",
@@ -55,8 +64,8 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         # state_class=SensorStateClass.TOTAL,
         suggested_display_precision=0,
         # The API doesn't provide future *cost* so we can try to estimate it by the previous consumption
-        value_fn=lambda data: data[CONF_FUTURE_CONSUMPTION].future_consumption *
-                              (data.invoice.consumption / data.invoice.amount_origin)
+        value_fn=lambda data: data[1].future_consumption * get_previous_bill_kwh_price(data[0])
+
     ),
 )
 
@@ -68,7 +77,7 @@ ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         state_class=SensorStateClass.TOTAL,
         suggested_display_precision=0,
-        value_fn=lambda data: data[CONF_INVOICE].consumption,
+        value_fn=lambda data: data[0].consumption,
     ),
     IecEntityDescription(
         key="iec_last_cost",
@@ -77,7 +86,7 @@ ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         native_unit_of_measurement=ILS,
         state_class=SensorStateClass.TOTAL,
         suggested_display_precision=2,
-        value_fn=lambda data: data[CONF_INVOICE].amount_origin,
+        value_fn=lambda data: data[0].amount_origin,
     ),
     IecEntityDescription(
         key="iec_last_number_of_days",
@@ -86,13 +95,13 @@ ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfTime.DAYS,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
-        value_fn=lambda data: data[CONF_INVOICE].days_period,
+        value_fn=lambda data: data[0].days_period,
     ),
     IecEntityDescription(
         key="iec_bill_date",
         name="Last IEC bill date",
         device_class=SensorDeviceClass.DATE,
-        value_fn=lambda data: data[CONF_INVOICE].to_date.date(),
+        value_fn=lambda data: data[0].to_date.date(),
     ),
     IecEntityDescription(
         key="iec_last_meter_reading",
@@ -101,7 +110,7 @@ ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
         suggested_display_precision=0,
-        value_fn=lambda data: data[CONF_INVOICE].meter_readings[0].reading,
+        value_fn=lambda data: data[0].meter_readings[0].reading,
     ),
 )
 
@@ -115,11 +124,11 @@ async def async_setup_entry(
     entities: list[IecSensor] = []
     contracts = coordinator.data.keys()
     for contract_id in contracts:
-        # if coordinator.is_smart_meter:
-        #     sensors_desc: tuple[IecEntityDescription, ...] = ELEC_SENSORS + SMART_ELEC_SENSORS
-        # else:
-        #     sensors_desc: tuple[IecEntityDescription, ...] = ELEC_SENSORS
-        sensors_desc: tuple[IecEntityDescription, ...] = ELEC_SENSORS
+        if coordinator.is_smart_meter:
+            sensors_desc: tuple[IecEntityDescription, ...] = ELEC_SENSORS + SMART_ELEC_SENSORS
+        else:
+            sensors_desc: tuple[IecEntityDescription, ...] = ELEC_SENSORS
+        # sensors_desc: tuple[IecEntityDescription, ...] = ELEC_SENSORS
 
         for sensor_desc in sensors_desc:
             entities.append(
