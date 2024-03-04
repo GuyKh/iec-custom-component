@@ -27,10 +27,11 @@ from iec_api.models.jwt import JWT
 from iec_api.models.remote_reading import ReadingResolution, RemoteReading, FutureConsumptionInfo
 
 from .const import DOMAIN, CONF_USER_ID, STATICS_DICT_NAME, STATIC_KWH_TARIFF, INVOICE_DICT_NAME, \
-    FUTURE_CONSUMPTIONS_DICT_NAME
+    FUTURE_CONSUMPTIONS_DICT_NAME, DAILY_READINGS_DICT_NAME
 
 _LOGGER = logging.getLogger(__name__)
 TIMEZONE = pytz.timezone("Asia/Jerusalem")
+
 
 
 class IecApiCoordinator(DataUpdateCoordinator[dict[int, dict]]):
@@ -72,7 +73,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[int, dict]]):
 
     async def _async_update_data(
             self,
-    ) -> dict[int, tuple[Invoice, FutureConsumptionInfo | None]]:
+    ) -> dict[int, tuple[Invoice, FutureConsumptionInfo | None, list[RemoteReading] | None]]:
         """Fetch data from API endpoint."""
         if self._first_load:
             _LOGGER.debug("Loading API token from config entry")
@@ -109,23 +110,43 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[int, dict]]):
         billing_invoices.invoices.sort(key=lambda inv: inv.full_date, reverse=True)
         last_invoice = billing_invoices.invoices[0]
 
-        future_consumption = None
+        future_consumption: FutureConsumptionInfo | None = None
+        daily_readings: list[RemoteReading] | None = None
         if self.is_smart_meter:
+            first_day_of_month: datetime = TIMEZONE.localize(datetime.today().replace(day=1, hour=0, minute=0, second=0,
+                                                                                      microsecond=0))
             devices = await self.api.get_devices(self._contract_id)
             for device in devices:
                 remote_reading = await self.api.get_remote_reading(device.device_number, int(device.device_code),
-                                                                   last_invoice.to_date,
-                                                                   last_invoice.to_date, ReadingResolution.MONTHLY,
+                                                                   first_day_of_month,
+                                                                   first_day_of_month, ReadingResolution.MONTHLY,
                                                                    self._contract_id)
                 if remote_reading:
                     future_consumption = remote_reading.future_consumption_info
+                    daily_readings = remote_reading.data
+
+                if datetime.today().day == first_day_of_month.day:
+                    yesterday: datetime = first_day_of_month - timedelta(days=1)
+                    remote_reading = await self.api.get_remote_reading(device.device_number, int(device.device_code),
+                                                                       yesterday, yesterday,
+                                                                       ReadingResolution.WEEKLY, self._contract_id)
+                    if remote_reading:
+                        daily_readings += remote_reading.data
+
+                        # Remove duplicates
+                        daily_readings = list(dict.fromkeys(daily_readings))
+
+                        # Sort by Date
+                        daily_readings.sort(key=lambda x: x.date)
+
 
         static_data = {}
         static_data[STATIC_KWH_TARIFF] = await self.api.get_kwh_tariff()
 
         data = {STATICS_DICT_NAME: static_data, INVOICE_DICT_NAME: last_invoice,
-                FUTURE_CONSUMPTIONS_DICT_NAME: future_consumption}
-        _LOGGER.debug(f"Coordinator Data: {data}")
+                FUTURE_CONSUMPTIONS_DICT_NAME: future_consumption,
+                DAILY_READINGS_DICT_NAME: daily_readings}
+
         return data
 
     async def _insert_statistics(self) -> None:
@@ -173,7 +194,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[int, dict]]):
             stats = await get_instance(self.hass).async_add_executor_job(
                 statistics_during_period,
                 self.hass,
-                readings.data[0].date,
+                readings.data[0].date - timedelta(hours=1),
                 None,
                 {consumption_statistic_id},
                 "hour",

@@ -17,7 +17,9 @@
                 "ms-python.python",
                 "github.vscode-pull-request-github",
                 "ryanluker.vscode-coverage-gutters",
-                "ms-python.vscode-pylance"
+                "ms-python.vscode-pylance",
+                "ms-python.pylint",
+                "charliermarsh.ruff"
             ],
             "settings": {
                 "files.eol": "\n",
@@ -25,7 +27,6 @@
                 "python.pythonPath": "/usr/bin/python3",
                 "python.analysis.autoSearchPaths": false,
                 "pylintEnabled": true,
-                "python.linting.enabled": true,
                 "python.formatting.provider": "black",
                 "python.formatting.blackPath": "/usr/local/py-utils/bin/black",
                 "editor.formatOnPaste": false,
