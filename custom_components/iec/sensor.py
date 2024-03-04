@@ -49,7 +49,7 @@ def get_previous_bill_kwh_price(invoice: Invoice) -> float:
 SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
     IecEntityDescription(
         key="elec_forecasted_usage",
-        name="Current bill electric forecasted usage",
+        name="Next bill electric forecasted usage",
         device_class=SensorDeviceClass.ENERGY,
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         # state_class=SensorStateClass.TOTAL,
@@ -58,7 +58,7 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
     ),
     IecEntityDescription(
         key="elec_forecasted_cost",
-        name="Current bill electric forecasted cost",
+        name="Next bill electric forecasted cost",
         device_class=SensorDeviceClass.MONETARY,
         native_unit_of_measurement=ILS,
         # state_class=SensorStateClass.TOTAL,
