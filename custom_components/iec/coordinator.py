@@ -33,7 +33,6 @@ _LOGGER = logging.getLogger(__name__)
 TIMEZONE = pytz.timezone("Asia/Jerusalem")
 
 
-
 class IecApiCoordinator(DataUpdateCoordinator[dict[int, dict]]):
     """Handle fetching IEC data, updating sensors and inserting statistics."""
 
@@ -48,8 +47,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[int, dict]]):
             _LOGGER,
             name="Iec",
             # Data is updated daily on IEC.
-            # Refresh every 4h to be at most 4h behind.
-            update_interval=timedelta(hours=4),
+            # Refresh every 1h to be at most 4h behind.
+            update_interval=timedelta(hours=1),
         )
         self._config_entry = config_entry
         self._bp_number = None
@@ -138,7 +137,6 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[int, dict]]):
 
                         # Sort by Date
                         daily_readings.sort(key=lambda x: x.date)
-
 
         static_data = {}
         static_data[STATIC_KWH_TARIFF] = await self.api.get_kwh_tariff()
