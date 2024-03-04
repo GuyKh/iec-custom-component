@@ -32,7 +32,8 @@ _LOGGER = logging.getLogger(__name__)
 TIMEZONE = pytz.timezone("Asia/Jerusalem")
 
 
-class IecApiCoordinator(DataUpdateCoordinator[dict[int, tuple[Invoice, FutureConsumptionInfo | None]]]):
+class IecApiCoordinator(DataUpdateCoordinator[dict[int, tuple[Invoice, FutureConsumptionInfo | None,
+                                                                       list[RemoteReading] | None]]]):
     """Handle fetching IEC data, updating sensors and inserting statistics."""
 
     def __init__(
@@ -71,7 +72,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[int, tuple[Invoice, FutureCon
 
     async def _async_update_data(
             self,
-    ) -> dict[int, tuple[Invoice, FutureConsumptionInfo | None]]:
+    ) -> dict[int, tuple[Invoice, FutureConsumptionInfo | None, list[RemoteReading] | None]]:
         """Fetch data from API endpoint."""
         if self._first_load:
             _LOGGER.debug("Loading API token from config entry")
@@ -108,18 +109,36 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[int, tuple[Invoice, FutureCon
         billing_invoices.invoices.sort(key=lambda inv: inv.full_date, reverse=True)
         last_invoice = billing_invoices.invoices[0]
 
-        future_consumption = None
+        future_consumption: FutureConsumptionInfo | None = None
+        daily_readings: list[RemoteReading] | None = None
         if self.is_smart_meter:
+            first_day_of_month: datetime = TIMEZONE.localize(datetime.today().replace(day=1, hour=0, minute=0, second=0,
+                                                                                      microsecond=0))
             devices = await self.api.get_devices(self._contract_id)
             for device in devices:
                 remote_reading = await self.api.get_remote_reading(device.device_number, int(device.device_code),
-                                                                   last_invoice.to_date,
-                                                                   last_invoice.to_date, ReadingResolution.MONTHLY,
+                                                                   first_day_of_month,
+                                                                   first_day_of_month, ReadingResolution.MONTHLY,
                                                                    self._contract_id)
                 if remote_reading:
                     future_consumption = remote_reading.future_consumption_info
+                    daily_readings = remote_reading.data
 
-        return {last_invoice.contract_number: (last_invoice, future_consumption)}
+                if datetime.today().day == first_day_of_month.day:
+                    yesterday: datetime = first_day_of_month - timedelta(days=1)
+                    remote_reading = await self.api.get_remote_reading(device.device_number, int(device.device_code),
+                                                                       yesterday, yesterday,
+                                                                       ReadingResolution.WEEKLY, self._contract_id)
+                    if remote_reading:
+                        daily_readings += remote_reading.data
+
+                        # Remove duplicates
+                        daily_readings = list(dict.fromkeys(daily_readings))
+
+                        # Sort by Date
+                        daily_readings.sort(key=lambda x: x.date)
+
+        return {last_invoice.contract_number: (last_invoice, future_consumption, daily_readings)}
 
     async def _insert_statistics(self) -> None:
         if not self.is_smart_meter:

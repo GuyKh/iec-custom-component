@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -43,7 +44,7 @@ def get_previous_bill_kwh_price(invoice: Invoice) -> float:
 
     if not invoice.consumption or not invoice.amount_origin:
         return 0
-    return invoice.consumption/invoice.amount_origin
+    return invoice.consumption / invoice.amount_origin
 
 
 SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
@@ -53,7 +54,7 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         device_class=SensorDeviceClass.ENERGY,
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         # state_class=SensorStateClass.TOTAL,
-        suggested_display_precision=0,
+        suggested_display_precision=3,
         value_fn=lambda data: data[1].future_consumption,
     ),
     IecEntityDescription(
@@ -62,10 +63,39 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         device_class=SensorDeviceClass.MONETARY,
         native_unit_of_measurement=ILS,
         # state_class=SensorStateClass.TOTAL,
-        suggested_display_precision=0,
+        suggested_display_precision=2,
         # The API doesn't provide future *cost* so we can try to estimate it by the previous consumption
         value_fn=lambda data: data[1].future_consumption * get_previous_bill_kwh_price(data[0])
-
+    ),
+    IecEntityDescription(
+        key="elec_today_consumption",
+        name="IEC today electric consumption",
+        device_class=SensorDeviceClass.ENERGY,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        # state_class=SensorStateClass.TOTAL,
+        suggested_display_precision=3,
+        value_fn=lambda data: (next(x for x in data[2] if x.date.day == datetime.now().day and
+                                    x.date.month == datetime.now().month)).value,
+    ),
+    IecEntityDescription(
+        key="elec_yesterday_consumption",
+        name="IEC yesterday electric consumption",
+        device_class=SensorDeviceClass.ENERGY,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        # state_class=SensorStateClass.TOTAL,
+        suggested_display_precision=3,
+        value_fn=lambda data: (next(x for x in data[2] if x.date.day == (datetime.now() - timedelta(days=1)).day and
+                                    x.date.month == (datetime.now() - timedelta(days=1)).month)).value,
+    ),
+    IecEntityDescription(
+        key="elec_this_month_consumption",
+        name="IEC this month electric consumption",
+        device_class=SensorDeviceClass.ENERGY,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        # state_class=SensorStateClass.TOTAL,
+        suggested_display_precision=3,
+        value_fn=lambda data: sum([reading.value for reading in data[2]
+                                   if reading.date.month == datetime.now().month]),
     ),
 )
 
