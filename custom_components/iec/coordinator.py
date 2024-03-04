@@ -144,7 +144,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[int, dict]]):
         static_data[STATIC_KWH_TARIFF] = await self.api.get_kwh_tariff()
 
         data = {STATICS_DICT_NAME: static_data, INVOICE_DICT_NAME: last_invoice,
-                FUTURE_CONSUMPTIONS_DICT_NAME: future_consumption, 
+                FUTURE_CONSUMPTIONS_DICT_NAME: future_consumption,
                 DAILY_READINGS_DICT_NAME: daily_readings}
 
         return data
