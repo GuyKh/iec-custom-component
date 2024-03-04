@@ -1,6 +1,7 @@
 """Support for IEC sensors."""
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -18,15 +19,18 @@ from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from iec_api.models.invoice import Invoice
 
-from .const import DOMAIN, ILS
+from .const import DOMAIN, ILS, STATICS_DICT_NAME, STATIC_KWH_TARIFF, FUTURE_CONSUMPTIONS_DICT_NAME, INVOICE_DICT_NAME, \
+    ILS_PER_KWH
 from .coordinator import IecApiCoordinator
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, kw_only=True)
 class IecEntityDescriptionMixin:
     """Mixin values for required keys."""
 
-    value_fn: Callable[[Invoice], str | float]
+    value_fn: Callable[[dict | tuple], str | float] | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -43,7 +47,7 @@ def get_previous_bill_kwh_price(invoice: Invoice) -> float:
 
     if not invoice.consumption or not invoice.amount_origin:
         return 0
-    return invoice.consumption/invoice.amount_origin
+    return invoice.consumption / invoice.amount_origin
 
 
 SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
@@ -54,7 +58,7 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         # state_class=SensorStateClass.TOTAL,
         suggested_display_precision=0,
-        value_fn=lambda data: data[1].future_consumption,
+        value_fn=lambda data: data[FUTURE_CONSUMPTIONS_DICT_NAME].future_consumption,
     ),
     IecEntityDescription(
         key="elec_forecasted_cost",
@@ -64,7 +68,7 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         # state_class=SensorStateClass.TOTAL,
         suggested_display_precision=0,
         # The API doesn't provide future *cost* so we can try to estimate it by the previous consumption
-        value_fn=lambda data: data[1].future_consumption * get_previous_bill_kwh_price(data[0])
+        value_fn=lambda data: data[FUTURE_CONSUMPTIONS_DICT_NAME].future_consumption * get_previous_bill_kwh_price(data[INVOICE_DICT_NAME])
 
     ),
 )
@@ -77,7 +81,7 @@ ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         state_class=SensorStateClass.TOTAL,
         suggested_display_precision=0,
-        value_fn=lambda data: data[0].consumption,
+        value_fn=lambda data: data[INVOICE_DICT_NAME].consumption,
     ),
     IecEntityDescription(
         key="iec_last_cost",
@@ -86,7 +90,7 @@ ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         native_unit_of_measurement=ILS,
         state_class=SensorStateClass.TOTAL,
         suggested_display_precision=2,
-        value_fn=lambda data: data[0].amount_origin,
+        value_fn=lambda data: data[INVOICE_DICT_NAME].amount_origin,
     ),
     IecEntityDescription(
         key="iec_last_number_of_days",
@@ -95,13 +99,13 @@ ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfTime.DAYS,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
-        value_fn=lambda data: data[0].days_period,
+        value_fn=lambda data: data[INVOICE_DICT_NAME].days_period,
     ),
     IecEntityDescription(
         key="iec_bill_date",
         name="Last IEC bill date",
         device_class=SensorDeviceClass.DATE,
-        value_fn=lambda data: data[0].to_date.date(),
+        value_fn=lambda data: data[INVOICE_DICT_NAME].to_date.date(),
     ),
     IecEntityDescription(
         key="iec_last_meter_reading",
@@ -110,7 +114,18 @@ ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
         suggested_display_precision=0,
-        value_fn=lambda data: data[0].meter_readings[0].reading,
+        value_fn=lambda data: data[INVOICE_DICT_NAME].meter_readings[0].reading,
+    )
+)
+
+STATIC_SENSORS: tuple[IecEntityDescription, ...] = (
+    IecEntityDescription(
+        key="iec_kwh_tariff",
+        name="IEC kWh tariff",
+        device_class=SensorDeviceClass.MONETARY,
+        native_unit_of_measurement=ILS_PER_KWH,
+        suggested_display_precision=2,
+        value_fn=lambda data: data[STATICS_DICT_NAME][STATIC_KWH_TARIFF]
     ),
 )
 
@@ -121,7 +136,7 @@ async def async_setup_entry(
     """Set up the IEC sensor."""
 
     coordinator: IecApiCoordinator = hass.data[DOMAIN][entry.entry_id]
-    entities: list[IecSensor] = []
+    entities: list[SensorEntity] = []
     contracts = coordinator.data.keys()
     for contract_id in contracts:
         if coordinator.is_smart_meter:
@@ -138,6 +153,15 @@ async def async_setup_entry(
                     contract_id
                 )
             )
+
+    for sensor_desc in STATIC_SENSORS:
+        entities.append(
+            IecSensor(
+                coordinator,
+                sensor_desc,
+                STATICS_DICT_NAME
+            )
+        )
 
     async_add_entities(entities)
 
@@ -164,6 +188,6 @@ class IecSensor(CoordinatorEntity[IecApiCoordinator], SensorEntity):
         """Return the state."""
         if self.coordinator.data is not None:
             return self.entity_description.value_fn(
-                self.coordinator.data[self.contract_id]
+                self.coordinator.data
             )
         return None
