@@ -26,14 +26,15 @@ from iec_api.models.invoice import Invoice
 from iec_api.models.jwt import JWT
 from iec_api.models.remote_reading import ReadingResolution, RemoteReading, FutureConsumptionInfo
 
-from .const import DOMAIN, CONF_USER_ID
+from .const import DOMAIN, CONF_USER_ID, STATICS_DICT_NAME, STATIC_KWH_TARIFF, INVOICE_DICT_NAME, \
+    FUTURE_CONSUMPTIONS_DICT_NAME
 
 _LOGGER = logging.getLogger(__name__)
 TIMEZONE = pytz.timezone("Asia/Jerusalem")
 
 
-class IecApiCoordinator(DataUpdateCoordinator[dict[int, tuple[Invoice, FutureConsumptionInfo | None,
-                                                                       list[RemoteReading] | None]]]):
+
+class IecApiCoordinator(DataUpdateCoordinator[dict[int, dict]]):
     """Handle fetching IEC data, updating sensors and inserting statistics."""
 
     def __init__(
@@ -138,7 +139,15 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[int, tuple[Invoice, FutureCon
                         # Sort by Date
                         daily_readings.sort(key=lambda x: x.date)
 
-        return {last_invoice.contract_number: (last_invoice, future_consumption, daily_readings)}
+
+        static_data = {}
+        static_data[STATIC_KWH_TARIFF] = await self.api.get_kwh_tariff()
+
+        data = {STATICS_DICT_NAME: static_data, INVOICE_DICT_NAME: last_invoice,
+                FUTURE_CONSUMPTIONS_DICT_NAME: future_consumption, 
+                DAILY_READINGS_DICT_NAME: daily_readings}
+
+        return data
 
     async def _insert_statistics(self) -> None:
         if not self.is_smart_meter:
