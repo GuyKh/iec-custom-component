@@ -27,11 +27,10 @@ from iec_api.models.jwt import JWT
 from iec_api.models.remote_reading import ReadingResolution, RemoteReading, FutureConsumptionInfo
 
 from .const import DOMAIN, CONF_USER_ID, STATICS_DICT_NAME, STATIC_KWH_TARIFF, INVOICE_DICT_NAME, \
-    FUTURE_CONSUMPTIONS_DICT_NAME, DAILY_READINGS_DICT_NAME
+    FUTURE_CONSUMPTIONS_DICT_NAME, DAILY_READINGS_DICT_NAME, STATIC_CONTRACT, STATIC_BP_NUMBER
 
 _LOGGER = logging.getLogger(__name__)
 TIMEZONE = pytz.timezone("Asia/Jerusalem")
-
 
 
 class IecApiCoordinator(DataUpdateCoordinator[dict[int, dict]]):
@@ -139,9 +138,11 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[int, dict]]):
                         # Sort by Date
                         daily_readings.sort(key=lambda x: x.date)
 
-
-        static_data = {}
-        static_data[STATIC_KWH_TARIFF] = await self.api.get_kwh_tariff()
+        static_data = {
+            STATIC_KWH_TARIFF: await self.api.get_kwh_tariff(),
+            STATIC_CONTRACT: self._contract_id,
+            STATIC_BP_NUMBER: self._bp_number
+        }
 
         data = {STATICS_DICT_NAME: static_data, INVOICE_DICT_NAME: last_invoice,
                 FUTURE_CONSUMPTIONS_DICT_NAME: future_consumption,

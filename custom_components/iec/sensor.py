@@ -21,7 +21,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from iec_api.models.invoice import Invoice
 
 from .const import DOMAIN, ILS, STATICS_DICT_NAME, STATIC_KWH_TARIFF, FUTURE_CONSUMPTIONS_DICT_NAME, INVOICE_DICT_NAME, \
-    ILS_PER_KWH, DAILY_READINGS_DICT_NAME
+    ILS_PER_KWH, DAILY_READINGS_DICT_NAME, STATIC_CONTRACT
 from .coordinator import IecApiCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -69,7 +69,7 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         # state_class=SensorStateClass.TOTAL,
         suggested_display_precision=2,
         # The API doesn't provide future *cost* so we can try to estimate it by the previous consumption
-        value_fn=lambda data: data[FUTURE_CONSUMPTIONS_DICT_NAME].future_consumption * get_previous_bill_kwh_price(data[INVOICE_DICT_NAME])
+        value_fn=lambda data: data[FUTURE_CONSUMPTIONS_DICT_NAME].future_consumption * data[STATICS_DICT_NAME][STATIC_KWH_TARIFF]
     ),
     IecEntityDescription(
         key="elec_today_consumption",
@@ -167,22 +167,22 @@ async def async_setup_entry(
 
     coordinator: IecApiCoordinator = hass.data[DOMAIN][entry.entry_id]
     entities: list[SensorEntity] = []
-    contracts = coordinator.data.keys()
-    for contract_id in contracts:
-        if coordinator.is_smart_meter:
-            sensors_desc: tuple[IecEntityDescription, ...] = ELEC_SENSORS + SMART_ELEC_SENSORS
-        else:
-            sensors_desc: tuple[IecEntityDescription, ...] = ELEC_SENSORS
-        # sensors_desc: tuple[IecEntityDescription, ...] = ELEC_SENSORS
 
-        for sensor_desc in sensors_desc:
-            entities.append(
-                IecSensor(
-                    coordinator,
-                    sensor_desc,
-                    contract_id
-                )
+    if coordinator.is_smart_meter:
+        sensors_desc: tuple[IecEntityDescription, ...] = ELEC_SENSORS + SMART_ELEC_SENSORS
+    else:
+        sensors_desc: tuple[IecEntityDescription, ...] = ELEC_SENSORS
+    # sensors_desc: tuple[IecEntityDescription, ...] = ELEC_SENSORS
+
+    contract_id = coordinator.data[STATICS_DICT_NAME][STATIC_CONTRACT]
+    for sensor_desc in sensors_desc:
+        entities.append(
+            IecSensor(
+                coordinator,
+                sensor_desc,
+                contract_id
             )
+        )
 
     for sensor_desc in STATIC_SENSORS:
         entities.append(
