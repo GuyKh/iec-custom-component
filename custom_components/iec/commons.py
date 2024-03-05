@@ -1,3 +1,4 @@
+"""IEC common functions."""
 from datetime import datetime
 
 from iec_api.models.remote_reading import RemoteReading
