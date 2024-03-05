@@ -44,7 +44,7 @@ async def _validate_login(
 
     elif login_data.get(CONF_API_TOKEN):
         try:
-            await api.load_jwt_token(login_data.get(CONF_API_TOKEN))
+            await api.load_jwt_token(JWT.from_dict(login_data.get(CONF_API_TOKEN)))
         except IECError:
             return {"base": "invalid_auth"}
 
@@ -111,7 +111,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data = {**self.data, **user_input}
             errors = await _validate_login(self.hass, data, client)
             if not errors:
-                data[CONF_API_TOKEN] = client.get_token()
+                data[CONF_API_TOKEN] = client.get_token().to_dict()
 
                 if data.get(CONF_TOTP_SECRET):
                     data.pop(CONF_TOTP_SECRET)
@@ -163,7 +163,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data = {**self.reauth_entry.data, **user_input}
             errors = await _validate_login(self.hass, data, client)
             if not errors:
-                data[CONF_API_TOKEN] = client.get_token()
+                data[CONF_API_TOKEN] = client.get_token().to_dict()
 
                 if data.get(CONF_TOTP_SECRET):
                     data.pop(CONF_TOTP_SECRET)
