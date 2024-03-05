@@ -19,9 +19,11 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from iec_api.models.invoice import Invoice
+from iec_api.models.remote_reading import RemoteReading
 
+from .commons import find_reading_by_date
 from .const import DOMAIN, ILS, STATICS_DICT_NAME, STATIC_KWH_TARIFF, FUTURE_CONSUMPTIONS_DICT_NAME, INVOICE_DICT_NAME, \
-    ILS_PER_KWH, DAILY_READINGS_DICT_NAME, STATIC_CONTRACT
+    ILS_PER_KWH, DAILY_READINGS_DICT_NAME, STATIC_CONTRACT, EMPTY_REMOTE_READING
 from .coordinator import IecApiCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -51,6 +53,18 @@ def get_previous_bill_kwh_price(invoice: Invoice) -> float:
     return invoice.consumption / invoice.amount_origin
 
 
+def _get_reading_by_date(readings: list[RemoteReading] | None, desired_date: datetime) -> RemoteReading:
+    if not readings:
+        return EMPTY_REMOTE_READING
+    try:
+        reading = next(reading for reading in readings if find_reading_by_date(reading, desired_date))
+        return reading
+
+    except StopIteration:
+        _LOGGER.info(f"Couldn't find daily reading for date: {desired_date.strftime('%Y-%m-%d')}")
+        return EMPTY_REMOTE_READING
+
+
 SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
     IecEntityDescription(
         key="elec_forecasted_usage",
@@ -69,7 +83,8 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         # state_class=SensorStateClass.TOTAL,
         suggested_display_precision=2,
         # The API doesn't provide future *cost* so we can try to estimate it by the previous consumption
-        value_fn=lambda data: data[FUTURE_CONSUMPTIONS_DICT_NAME].future_consumption * data[STATICS_DICT_NAME][STATIC_KWH_TARIFF]
+        value_fn=lambda data: data[FUTURE_CONSUMPTIONS_DICT_NAME].future_consumption * data[STATICS_DICT_NAME][
+            STATIC_KWH_TARIFF]
     ),
     IecEntityDescription(
         key="elec_today_consumption",
@@ -78,8 +93,7 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         # state_class=SensorStateClass.TOTAL,
         suggested_display_precision=3,
-        value_fn=lambda data: (next(x for x in data[DAILY_READINGS_DICT_NAME] if x.date.day == datetime.now().day and
-                                    x.date.month == datetime.now().month)).value,
+        value_fn=lambda data: _get_reading_by_date(data[DAILY_READINGS_DICT_NAME], datetime.now()).value
     ),
     IecEntityDescription(
         key="elec_yesterday_consumption",
@@ -88,8 +102,8 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         # state_class=SensorStateClass.TOTAL,
         suggested_display_precision=3,
-        value_fn=lambda data: (next(x for x in data[DAILY_READINGS_DICT_NAME] if x.date.day == (datetime.now() - timedelta(days=1)).day and
-                                    x.date.month == (datetime.now() - timedelta(days=1)).month)).value,
+        value_fn=lambda data: _get_reading_by_date(data[DAILY_READINGS_DICT_NAME],
+                                                   datetime.now() - timedelta(days=1)).value,
     ),
     IecEntityDescription(
         key="elec_this_month_consumption",

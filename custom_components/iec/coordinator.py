@@ -20,15 +20,40 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import aiohttp_client
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from iec_api.iec_client import IecClient
+from iec_api.models.device import Device
 from iec_api.models.exceptions import IECError
 from iec_api.models.jwt import JWT
 from iec_api.models.remote_reading import ReadingResolution, RemoteReading, FutureConsumptionInfo
 
+from .commons import find_reading_by_date
 from .const import DOMAIN, CONF_USER_ID, STATICS_DICT_NAME, STATIC_KWH_TARIFF, INVOICE_DICT_NAME, \
     FUTURE_CONSUMPTIONS_DICT_NAME, DAILY_READINGS_DICT_NAME, STATIC_CONTRACT, STATIC_BP_NUMBER
 
 _LOGGER = logging.getLogger(__name__)
 TIMEZONE = pytz.timezone("Asia/Jerusalem")
+
+
+async def _verify_readings_exist(daily_readings: list[RemoteReading], desired_date: datetime, device: Device,
+                                 contract_id: str, api: IecClient):
+
+    desired_date = desired_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    has_daily_reading = any(find_reading_by_date(reading, desired_date) for reading in daily_readings)
+    if not has_daily_reading:
+        _LOGGER.debug(f'Daily reading for date: {desired_date.strftime("%Y-%m-%d")} is missing, calculating manually')
+        hourly_readings = await api.get_remote_reading(device.device_number, int(device.device_code),
+                                                       desired_date, desired_date,
+                                                       ReadingResolution.DAILY, contract_id)
+        daily_sum = 0
+        if hourly_readings is None or hourly_readings.data is None:
+            _LOGGER.info(f'No readings found for date: {desired_date.strftime("%Y-%m-%d")}')
+            return
+
+        for reading in hourly_readings.data:
+            daily_sum += reading.value
+
+        daily_readings.append(RemoteReading(0, desired_date, daily_sum))
+    else:
+        _LOGGER.debug(f'Daily reading for date: {desired_date.strftime("%Y-%m-%d")} is present')
 
 
 class IecApiCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -135,6 +160,10 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
                         # Sort by Date
                         daily_readings.sort(key=lambda x: x.date)
+
+                await _verify_readings_exist(daily_readings, datetime.today() - timedelta(days=1),
+                                             device, self._contract_id, self.api)
+                await _verify_readings_exist(daily_readings, datetime.today(), device, self._contract_id, self.api)
 
         static_data = {
             STATIC_KWH_TARIFF: (await self.api.get_kwh_tariff()) / 100,
