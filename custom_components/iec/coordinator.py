@@ -4,7 +4,7 @@ import json
 import logging
 import socket
 from datetime import datetime, timedelta
-from typing import cast, Dict, Any  # noqa: UP035
+from typing import cast, Any  # noqa: UP035
 
 import pytz
 from homeassistant.components.recorder import get_instance
@@ -22,7 +22,6 @@ from homeassistant.helpers import aiohttp_client
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from iec_api.iec_client import IecClient
 from iec_api.models.exceptions import IECError
-from iec_api.models.invoice import Invoice
 from iec_api.models.jwt import JWT
 from iec_api.models.remote_reading import ReadingResolution, RemoteReading, FutureConsumptionInfo
 
