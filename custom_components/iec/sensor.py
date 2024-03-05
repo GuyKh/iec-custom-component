@@ -115,6 +115,15 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         value_fn=lambda data: sum([reading.value for reading in data[DAILY_READINGS_DICT_NAME]
                                    if reading.date.month == datetime.now().month]),
     ),
+    IecEntityDescription(
+        key="elec_latest_meter_reading",
+        name="IEC latest meter reading",
+        device_class=SensorDeviceClass.ENERGY,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        suggested_display_precision=3,
+        value_fn=lambda data: data[FUTURE_CONSUMPTIONS_DICT_NAME].total_import
+    ),
 )
 
 ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
