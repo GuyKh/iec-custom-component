@@ -1,10 +1,14 @@
 """Constants for the IEC integration."""
+from datetime import datetime
+
+from iec_api.models.remote_reading import RemoteReading
 
 DOMAIN = "iec"
 
 ILS = "₪"
 ILS_PER_KWH = "ILS/kWh"
 
+EMPTY_REMOTE_READING = RemoteReading(0, datetime(2024, 1, 1), 0)
 CONF_USER_ID = "user_id"
 CONF_TOTP_SECRET = "totp_secret"
 STATICS_DICT_NAME = "statics"
