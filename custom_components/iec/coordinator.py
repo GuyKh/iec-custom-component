@@ -4,7 +4,7 @@ import json
 import logging
 import socket
 from datetime import datetime, timedelta
-from typing import cast  # noqa: UP035
+from typing import cast, Any  # noqa: UP035
 
 import pytz
 from homeassistant.components.recorder import get_instance
@@ -22,7 +22,6 @@ from homeassistant.helpers import aiohttp_client
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from iec_api.iec_client import IecClient
 from iec_api.models.exceptions import IECError
-from iec_api.models.invoice import Invoice
 from iec_api.models.jwt import JWT
 from iec_api.models.remote_reading import ReadingResolution, RemoteReading, FutureConsumptionInfo
 
@@ -33,7 +32,7 @@ _LOGGER = logging.getLogger(__name__)
 TIMEZONE = pytz.timezone("Asia/Jerusalem")
 
 
-class IecApiCoordinator(DataUpdateCoordinator[dict[int, dict]]):
+class IecApiCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Handle fetching IEC data, updating sensors and inserting statistics."""
 
     def __init__(
@@ -72,7 +71,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[int, dict]]):
 
     async def _async_update_data(
             self,
-    ) -> dict[int, tuple[Invoice, FutureConsumptionInfo | None, list[RemoteReading] | None]]:
+    ) -> dict[str, Any]:
         """Fetch data from API endpoint."""
         if self._first_load:
             _LOGGER.debug("Loading API token from config entry")
@@ -139,11 +138,10 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[int, dict]]):
                         daily_readings.sort(key=lambda x: x.date)
 
         static_data = {
-            STATIC_KWH_TARIFF: await self.api.get_kwh_tariff(),
+            STATIC_KWH_TARIFF: (await self.api.get_kwh_tariff()) / 100,
             STATIC_CONTRACT: self._contract_id,
             STATIC_BP_NUMBER: self._bp_number
         }
-
 
         data = {STATICS_DICT_NAME: static_data, INVOICE_DICT_NAME: last_invoice,
                 FUTURE_CONSUMPTIONS_DICT_NAME: future_consumption,
