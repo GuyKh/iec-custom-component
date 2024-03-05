@@ -47,8 +47,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[int, dict]]):
             _LOGGER,
             name="Iec",
             # Data is updated daily on IEC.
-            # Refresh every 4h to be at most 4h behind.
-            update_interval=timedelta(hours=4),
+            # Refresh every 1h to be at most 4h behind.
+            update_interval=timedelta(hours=1),
         )
         self._config_entry = config_entry
         self._bp_number = None
@@ -143,6 +143,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[int, dict]]):
             STATIC_CONTRACT: self._contract_id,
             STATIC_BP_NUMBER: self._bp_number
         }
+
 
         data = {STATICS_DICT_NAME: static_data, INVOICE_DICT_NAME: last_invoice,
                 FUTURE_CONSUMPTIONS_DICT_NAME: future_consumption,
