@@ -75,7 +75,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Fetch data from API endpoint."""
         if self._first_load:
             _LOGGER.debug("Loading API token from config entry")
-            await self.api.load_jwt_token(JWT.from_dict(json.loads(self._entry_data[CONF_API_TOKEN])))
+            await self.api.load_jwt_token(self._entry_data[CONF_API_TOKEN])
 
         self._first_load = False
         try:
