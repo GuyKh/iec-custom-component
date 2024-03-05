@@ -187,6 +187,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 DAILY_READINGS_DICT_NAME: daily_readings,
                 TODAY_READING_DICT_NAME: today_reading}
 
+        # Clean today reading for next reading cycle
+        self._today_reading = None
         return data
 
     async def _insert_statistics(self) -> None:
