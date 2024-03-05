@@ -1,4 +1,4 @@
-# Israel Electric Company (IEC) Custom Component
+# Israel Electric Corporation (IEC) Custom Component
 
 [![GitHub Release][releases-shield]][releases]
 [![GitHub Activity][commits-shield]][commits]
