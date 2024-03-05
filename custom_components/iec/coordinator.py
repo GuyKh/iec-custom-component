@@ -1,6 +1,5 @@
 """Coordinator to handle IEC connections."""
 import itertools
-import json
 import logging
 import socket
 from datetime import datetime, timedelta
