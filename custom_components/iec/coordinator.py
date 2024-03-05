@@ -71,7 +71,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER,
             name="Iec",
             # Data is updated daily on IEC.
-            # Refresh every 1h to be at most 4h behind.
+            # Refresh every 1h to be at most 5h behind.
             update_interval=timedelta(hours=1),
         )
         self._config_entry = config_entry
