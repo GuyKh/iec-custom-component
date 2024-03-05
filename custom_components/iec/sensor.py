@@ -23,7 +23,7 @@ from iec_api.models.remote_reading import RemoteReading
 
 from .commons import find_reading_by_date
 from .const import DOMAIN, ILS, STATICS_DICT_NAME, STATIC_KWH_TARIFF, FUTURE_CONSUMPTIONS_DICT_NAME, INVOICE_DICT_NAME, \
-    ILS_PER_KWH, DAILY_READINGS_DICT_NAME, STATIC_CONTRACT, EMPTY_REMOTE_READING
+    ILS_PER_KWH, DAILY_READINGS_DICT_NAME, STATIC_CONTRACT, EMPTY_REMOTE_READING, TODAY_READING_DICT_NAME
 from .coordinator import IecApiCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -114,6 +114,15 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         suggested_display_precision=3,
         value_fn=lambda data: sum([reading.value for reading in data[DAILY_READINGS_DICT_NAME]
                                    if reading.date.month == datetime.now().month]),
+    ),
+    IecEntityDescription(
+        key="elec_latest_meter_reading",
+        name="IEC latest meter reading",
+        device_class=SensorDeviceClass.ENERGY,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        suggested_display_precision=3,
+        value_fn=lambda data: data[TODAY_READING_DICT_NAME].future_consumption_info.total_import
     ),
 )
 
