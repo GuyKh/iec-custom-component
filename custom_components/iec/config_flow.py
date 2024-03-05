@@ -1,7 +1,6 @@
 """"Config flow for IEC integration."""
 from __future__ import annotations
 
-import json
 import logging
 from collections.abc import Mapping
 from typing import Any
@@ -44,7 +43,7 @@ async def _validate_login(
 
     elif login_data.get(CONF_API_TOKEN):
         try:
-            await api.load_jwt_token(JWT.from_dict(json.loads(login_data.get(CONF_API_TOKEN))))
+            await api.load_jwt_token(JWT.from_dict(login_data.get(CONF_API_TOKEN)))
         except IECError:
             return {"base": "invalid_auth"}
 
@@ -111,7 +110,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data = {**self.data, **user_input}
             errors = await _validate_login(self.hass, data, client)
             if not errors:
-                data[CONF_API_TOKEN] = json.dumps(client.get_token().to_dict())
+                data[CONF_API_TOKEN] = client.get_token().to_dict()
 
                 if data.get(CONF_TOTP_SECRET):
                     data.pop(CONF_TOTP_SECRET)
@@ -157,18 +156,27 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Dialog that informs the user that reauth is required."""
         assert self.reauth_entry
         errors: dict[str, str] = {}
-        if user_input is not None:
+        client: IecClient = self.client
+
+        if user_input is not None and user_input[CONF_TOTP_SECRET] is not None:
             data = {**self.reauth_entry.data, **user_input}
-            errors = await _validate_login(self.hass, data)
+            errors = await _validate_login(self.hass, data, client)
             if not errors:
+                data[CONF_API_TOKEN] = client.get_token().to_dict()
+
+                if data.get(CONF_TOTP_SECRET):
+                    data.pop(CONF_TOTP_SECRET)
+
                 self.hass.config_entries.async_update_entry(
                     self.reauth_entry, data=data
                 )
                 await self.hass.config_entries.async_reload(self.reauth_entry.entry_id)
                 return self.async_abort(reason="reauth_successful")
+
+        await client.login_with_id()
+
         schema = {vol.Required(CONF_USER_ID): self.reauth_entry.data[CONF_USER_ID],
-                  vol.Required(CONF_API_TOKEN): str,
-                  vol.Optional(CONF_TOTP_SECRET): str}
+                  vol.Required(CONF_TOTP_SECRET): str}
 
         return self.async_show_form(
             step_id="reauth_confirm",

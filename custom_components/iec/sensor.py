@@ -154,7 +154,7 @@ STATIC_SENSORS: tuple[IecEntityDescription, ...] = (
         name="IEC kWh tariff",
         device_class=SensorDeviceClass.MONETARY,
         native_unit_of_measurement=ILS_PER_KWH,
-        suggested_display_precision=2,
+        suggested_display_precision=4,
         value_fn=lambda data: data[STATICS_DICT_NAME][STATIC_KWH_TARIFF]
     ),
 )

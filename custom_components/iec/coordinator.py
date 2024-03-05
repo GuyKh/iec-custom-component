@@ -1,6 +1,5 @@
 """Coordinator to handle IEC connections."""
 import itertools
-import json
 import logging
 import socket
 from datetime import datetime, timedelta
@@ -75,7 +74,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Fetch data from API endpoint."""
         if self._first_load:
             _LOGGER.debug("Loading API token from config entry")
-            await self.api.load_jwt_token(JWT.from_dict(json.loads(self._entry_data[CONF_API_TOKEN])))
+            await self.api.load_jwt_token(JWT.from_dict(self._entry_data[CONF_API_TOKEN]))
 
         self._first_load = False
         try:
@@ -86,7 +85,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             new_token = self.api.get_token()
             if old_token != new_token:
                 _LOGGER.debug("Token refreshed")
-                new_data = {**self._entry_data, CONF_API_TOKEN: new_token}
+                new_data = {**self._entry_data, CONF_API_TOKEN: new_token.to_dict()}
                 self.hass.config_entries.async_update_entry(entry=self._config_entry,
                                                             data=new_data)
         except IECError as err:
