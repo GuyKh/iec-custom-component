@@ -23,7 +23,7 @@ from iec_api.models.remote_reading import RemoteReading
 
 from .commons import find_reading_by_date
 from .const import DOMAIN, ILS, STATICS_DICT_NAME, STATIC_KWH_TARIFF, FUTURE_CONSUMPTIONS_DICT_NAME, INVOICE_DICT_NAME, \
-    ILS_PER_KWH, DAILY_READINGS_DICT_NAME, STATIC_CONTRACT, EMPTY_REMOTE_READING, TODAY_READING_DICT_NAME
+    ILS_PER_KWH, DAILY_READINGS_DICT_NAME, STATIC_CONTRACT, EMPTY_REMOTE_READING
 from .coordinator import IecApiCoordinator
 
 _LOGGER = logging.getLogger(__name__)
