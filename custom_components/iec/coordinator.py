@@ -196,7 +196,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # Support only smart meters at the moment
             return
 
-        _LOGGER.info(f"Updating statistics for IEC Contract {self._contract_id}")
+        _LOGGER.debug(f"Updating statistics for IEC Contract {self._contract_id}")
         devices = await self.api.get_devices(self._contract_id)
         month_ago_time = (datetime.now() - timedelta(weeks=4))
 
