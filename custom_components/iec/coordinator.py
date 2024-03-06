@@ -218,10 +218,17 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                                                              self._contract_id)
             else:
                 last_stat_time = last_stat[consumption_statistic_id][0]["start"]
-                # API returns daily data, so need to increase the start date by 4 hours to get the next day
-                from_date = datetime.fromtimestamp(last_stat_time) + timedelta(hours=4)
+                # API returns daily data, so need to increase the start date by 4 hrs to get the next day
+                from_date = datetime.fromtimestamp(last_stat_time)
+                _LOGGER.debug(f"Last statistics are from {from_date.strftime('%Y-%m-%d %H:%M:%S')}")
+
+                if from_date.hour == 23:
+                    from_date = from_date + timedelta(hours=2)
+
+                _LOGGER.debug(f"Calculated from_date = {from_date.strftime('%Y-%m-%d %H:%M:%S')}")
                 if (datetime.today() - from_date).days <= 0:
-                    from_date = TIMEZONE.localize(datetime.today())
+                    _LOGGER.debug("The date to fetch is today or later, replacing it with Today at 01:00:00")
+                    from_date = TIMEZONE.localize(datetime.today().replace(hour=1, minute=0, second=0, microsecond=0))
 
                 _LOGGER.debug(f"Fetching consumption from {from_date.strftime('%Y-%m-%d %H:%M:%S')}")
                 readings = await self.api.get_remote_reading(device.device_number, int(device.device_code),
