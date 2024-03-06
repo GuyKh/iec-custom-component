@@ -219,8 +219,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                                                              self._contract_id)
             else:
                 last_stat_time = last_stat[consumption_statistic_id][0]["start"]
-                # API returns daily data, so need to increase the start date by 1 day to get the next day
-                from_date = datetime.fromtimestamp(last_stat_time) + timedelta(days=1)
+                # API returns daily data, so need to increase the start date by 4 hours to get the next day
+                from_date = datetime.fromtimestamp(last_stat_time) + timedelta(hours=4)
                 if (datetime.today() - from_date).days <= 0:
                     from_date = TIMEZONE.localize(datetime.today())
 
