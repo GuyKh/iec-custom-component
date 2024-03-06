@@ -27,7 +27,7 @@ from iec_api.models.remote_reading import ReadingResolution, RemoteReading, Futu
 
 from .commons import find_reading_by_date
 from .const import DOMAIN, CONF_USER_ID, STATICS_DICT_NAME, STATIC_KWH_TARIFF, INVOICE_DICT_NAME, \
-    FUTURE_CONSUMPTIONS_DICT_NAME, DAILY_READINGS_DICT_NAME, STATIC_CONTRACT, STATIC_BP_NUMBER, TODAY_READING_DICT_NAME
+    FUTURE_CONSUMPTIONS_DICT_NAME, DAILY_READINGS_DICT_NAME, STATIC_CONTRACT, STATIC_BP_NUMBER
 
 _LOGGER = logging.getLogger(__name__)
 TIMEZONE = pytz.timezone("Asia/Jerusalem")
@@ -184,8 +184,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         data = {STATICS_DICT_NAME: static_data, INVOICE_DICT_NAME: last_invoice,
                 FUTURE_CONSUMPTIONS_DICT_NAME: future_consumption,
-                DAILY_READINGS_DICT_NAME: daily_readings,
-                TODAY_READING_DICT_NAME: today_reading}
+                DAILY_READINGS_DICT_NAME: daily_readings}
 
         # Clean today reading for next reading cycle
         self._today_reading = None
