@@ -27,7 +27,7 @@ from iec_api.models.remote_reading import ReadingResolution, RemoteReading, Futu
 
 from .commons import find_reading_by_date
 from .const import DOMAIN, CONF_USER_ID, STATICS_DICT_NAME, STATIC_KWH_TARIFF, INVOICE_DICT_NAME, \
-    FUTURE_CONSUMPTIONS_DICT_NAME, DAILY_READINGS_DICT_NAME, STATIC_CONTRACT, STATIC_BP_NUMBER, TODAY_READING_DICT_NAME
+    FUTURE_CONSUMPTIONS_DICT_NAME, DAILY_READINGS_DICT_NAME, STATIC_CONTRACT, STATIC_BP_NUMBER
 
 _LOGGER = logging.getLogger(__name__)
 TIMEZONE = pytz.timezone("Asia/Jerusalem")
@@ -184,8 +184,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         data = {STATICS_DICT_NAME: static_data, INVOICE_DICT_NAME: last_invoice,
                 FUTURE_CONSUMPTIONS_DICT_NAME: future_consumption,
-                DAILY_READINGS_DICT_NAME: daily_readings,
-                TODAY_READING_DICT_NAME: today_reading}
+                DAILY_READINGS_DICT_NAME: daily_readings}
 
         # Clean today reading for next reading cycle
         self._today_reading = None
@@ -197,7 +196,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # Support only smart meters at the moment
             return
 
-        _LOGGER.info(f"Updating statistics for IEC Contract {self._contract_id}")
+        _LOGGER.debug(f"Updating statistics for IEC Contract {self._contract_id}")
         devices = await self.api.get_devices(self._contract_id)
         month_ago_time = (datetime.now() - timedelta(weeks=4))
 
@@ -219,10 +218,17 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                                                              self._contract_id)
             else:
                 last_stat_time = last_stat[consumption_statistic_id][0]["start"]
-                # API returns daily data, so need to increase the start date by 1 day to get the next day
-                from_date = datetime.fromtimestamp(last_stat_time) + timedelta(days=1)
+                # API returns daily data, so need to increase the start date by 4 hrs to get the next day
+                from_date = datetime.fromtimestamp(last_stat_time)
+                _LOGGER.debug(f"Last statistics are from {from_date.strftime('%Y-%m-%d %H:%M:%S')}")
+
+                if from_date.hour == 23:
+                    from_date = from_date + timedelta(hours=2)
+
+                _LOGGER.debug(f"Calculated from_date = {from_date.strftime('%Y-%m-%d %H:%M:%S')}")
                 if (datetime.today() - from_date).days <= 0:
-                    from_date = TIMEZONE.localize(datetime.today())
+                    _LOGGER.debug("The date to fetch is today or later, replacing it with Today at 01:00:00")
+                    from_date = TIMEZONE.localize(datetime.today().replace(hour=1, minute=0, second=0, microsecond=0))
 
                 _LOGGER.debug(f"Fetching consumption from {from_date.strftime('%Y-%m-%d %H:%M:%S')}")
                 readings = await self.api.get_remote_reading(device.device_number, int(device.device_code),
