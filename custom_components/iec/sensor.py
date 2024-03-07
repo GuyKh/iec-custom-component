@@ -68,7 +68,6 @@ def _get_reading_by_date(readings: list[RemoteReading] | None, desired_date: dat
 SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
     IecEntityDescription(
         key="elec_forecasted_usage",
-        name="Next bill electric forecasted usage",
         device_class=SensorDeviceClass.ENERGY,
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         # state_class=SensorStateClass.TOTAL,
@@ -77,7 +76,6 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
     ),
     IecEntityDescription(
         key="elec_forecasted_cost",
-        name="Next bill electric forecasted cost",
         device_class=SensorDeviceClass.MONETARY,
         native_unit_of_measurement=ILS,
         # state_class=SensorStateClass.TOTAL,
@@ -88,7 +86,6 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
     ),
     IecEntityDescription(
         key="elec_today_consumption",
-        name="IEC today electric consumption",
         device_class=SensorDeviceClass.ENERGY,
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         # state_class=SensorStateClass.TOTAL,
@@ -97,7 +94,6 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
     ),
     IecEntityDescription(
         key="elec_yesterday_consumption",
-        name="IEC yesterday electric consumption",
         device_class=SensorDeviceClass.ENERGY,
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         # state_class=SensorStateClass.TOTAL,
@@ -107,7 +103,6 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
     ),
     IecEntityDescription(
         key="elec_this_month_consumption",
-        name="IEC this month electric consumption",
         device_class=SensorDeviceClass.ENERGY,
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         # state_class=SensorStateClass.TOTAL,
@@ -117,7 +112,6 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
     ),
     IecEntityDescription(
         key="elec_latest_meter_reading",
-        name="IEC latest meter reading",
         device_class=SensorDeviceClass.ENERGY,
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         state_class=SensorStateClass.TOTAL_INCREASING,
@@ -129,7 +123,6 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
 ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
     IecEntityDescription(
         key="iec_last_elec_usage",
-        name="Last IEC bill electric usage to date",
         device_class=SensorDeviceClass.ENERGY,
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         state_class=SensorStateClass.TOTAL,
@@ -138,7 +131,6 @@ ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
     ),
     IecEntityDescription(
         key="iec_last_cost",
-        name="Last IEC bill electric cost",
         device_class=SensorDeviceClass.MONETARY,
         native_unit_of_measurement=ILS,
         state_class=SensorStateClass.TOTAL,
@@ -147,7 +139,6 @@ ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
     ),
     IecEntityDescription(
         key="iec_last_number_of_days",
-        name="Last IEC bill length in days",
         device_class=SensorDeviceClass.DURATION,
         native_unit_of_measurement=UnitOfTime.DAYS,
         state_class=SensorStateClass.MEASUREMENT,
@@ -156,13 +147,11 @@ ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
     ),
     IecEntityDescription(
         key="iec_bill_date",
-        name="Last IEC bill date",
         device_class=SensorDeviceClass.DATE,
         value_fn=lambda data: data[INVOICE_DICT_NAME].to_date.date(),
     ),
     IecEntityDescription(
         key="iec_last_meter_reading",
-        name="Last IEC bill meter reading",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
@@ -174,7 +163,6 @@ ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
 STATIC_SENSORS: tuple[IecEntityDescription, ...] = (
     IecEntityDescription(
         key="iec_kwh_tariff",
-        name="IEC kWh tariff",
         device_class=SensorDeviceClass.MONETARY,
         native_unit_of_measurement=ILS_PER_KWH,
         suggested_display_precision=4,
@@ -222,6 +210,7 @@ async def async_setup_entry(
 class IecSensor(CoordinatorEntity[IecApiCoordinator], SensorEntity):
     """Representation of an IEC sensor."""
 
+    _attr_has_entity_name = True
     entity_description: IecEntityDescription
 
     def __init__(
@@ -235,6 +224,7 @@ class IecSensor(CoordinatorEntity[IecApiCoordinator], SensorEntity):
         self.entity_description = description
         self.contract_id = contract_id
         self._attr_unique_id = f"{str(contract_id)}_{description.key}"
+        self._attr_translation_key = f"{description.key}"
 
     @property
     def native_value(self) -> StateType:
