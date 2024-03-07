@@ -33,11 +33,11 @@ _LOGGER = logging.getLogger(__name__)
 TIMEZONE = pytz.timezone("Asia/Jerusalem")
 
 
-async def _verify_readings_exist(daily_readings: list[RemoteReading], desired_date: datetime, device: Device,
-                                 contract_id: str, api: IecClient, prefetched_reading: RemoteReading | None = None):
+async def _verify_daily_readings_exist(daily_readings: list[RemoteReading], desired_date: datetime, device: Device,
+                                       contract_id: str, api: IecClient, prefetched_reading: RemoteReading | None = None):
     desired_date = desired_date.replace(hour=0, minute=0, second=0, microsecond=0)
-    has_daily_reading = any(find_reading_by_date(reading, desired_date) for reading in daily_readings)
-    if not has_daily_reading:
+    daily_reading = next(filter(lambda x: find_reading_by_date(x, desired_date), daily_readings), None)
+    if not daily_reading:
         _LOGGER.debug(f'Daily reading for date: {desired_date.strftime("%Y-%m-%d")} is missing, calculating manually')
         hourly_readings = prefetched_reading
         if not hourly_readings:
@@ -54,7 +54,8 @@ async def _verify_readings_exist(daily_readings: list[RemoteReading], desired_da
 
         daily_readings.append(RemoteReading(0, desired_date, daily_sum))
     else:
-        _LOGGER.debug(f'Daily reading for date: {desired_date.strftime("%Y-%m-%d")} is present')
+        _LOGGER.debug(f'Daily reading for date: {daily_reading.date.strftime("%Y-%m-%d")}'
+                      f' is present: {daily_reading.value}')
 
 
 class IecApiCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -138,20 +139,25 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         daily_readings: list[RemoteReading] | None = None
         today_reading: RemoteReading | None = None
         if self.is_smart_meter:
-            first_day_of_month: datetime = TIMEZONE.localize(datetime.today().replace(day=1, hour=0, minute=0, second=0,
-                                                                                      microsecond=0))
+            # For some reason, there are differences between sending 2024-03-01 and sending 2024-03-07 (Today)
+            # So instead of sending the 1st day of the month, just sending today date
+            # monthly_report_req_date: datetime = TIMEZONE.localize(datetime.today().replace(day=1, hour=0, minute=0,
+            #                                                                                second=0, microsecond=0))
+            monthly_report_req_date: datetime = TIMEZONE.localize(datetime.today().replace(hour=1, minute=0,
+                                                                                           second=0, microsecond=0))
             devices = await self.api.get_devices(self._contract_id)
             for device in devices:
                 remote_reading = await self.api.get_remote_reading(device.device_number, int(device.device_code),
-                                                                   first_day_of_month,
-                                                                   first_day_of_month, ReadingResolution.MONTHLY,
+                                                                   monthly_report_req_date,
+                                                                   monthly_report_req_date, ReadingResolution.MONTHLY,
                                                                    self._contract_id)
                 if remote_reading:
                     future_consumption = remote_reading.future_consumption_info
                     daily_readings = remote_reading.data
 
-                if datetime.today().day == first_day_of_month.day:
-                    yesterday: datetime = first_day_of_month - timedelta(days=1)
+                if datetime.today().day == 1:
+                    # if today's the 1st of the month, "yesterday" is on a different month
+                    yesterday: datetime = monthly_report_req_date - timedelta(days=1)
                     remote_reading = await self.api.get_remote_reading(device.device_number, int(device.device_code),
                                                                        yesterday, yesterday,
                                                                        ReadingResolution.WEEKLY, self._contract_id)
@@ -164,8 +170,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         # Sort by Date
                         daily_readings.sort(key=lambda x: x.date)
 
-                await _verify_readings_exist(daily_readings, datetime.today() - timedelta(days=1),
-                                             device, self._contract_id, self.api)
+                await _verify_daily_readings_exist(daily_readings, datetime.today() - timedelta(days=1),
+                                                   device, self._contract_id, self.api)
 
                 today_reading = self._today_reading
 
@@ -173,8 +179,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     today_reading = await self.api.get_remote_reading(device.device_number, int(device.device_code),
                                                                       datetime.today(), datetime.today(),
                                                                       ReadingResolution.DAILY, self._contract_id)
-                await _verify_readings_exist(daily_readings, datetime.today(), device, self._contract_id, self.api,
-                                             today_reading)
+                await _verify_daily_readings_exist(daily_readings, datetime.today(), device, self._contract_id, self.api,
+                                                   today_reading)
 
         static_data = {
             STATIC_KWH_TARIFF: (await self.api.get_kwh_tariff()) / 100,
