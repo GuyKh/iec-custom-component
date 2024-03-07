@@ -1,0 +1,76 @@
+{
+    "entity": {
+      "sensor": {
+        "elec_forecasted_usage": {
+          "name": "סך צריכת החשמל בחשבונית הבאה"
+        },
+        "elec_forecasted_cost": {
+          "name": "סך עלות צריכת החשמל בחשבונית הבאה"
+        },
+        "elec_today_consumption": {
+          "name": "סך צריכת החשמל היום"
+        },
+        "elec_yesterday_consumption": {
+          "name": "סך צריכת החשמל אתמול"
+        },
+        "elec_this_month_consumption": {
+          "name": "סך צריכת החשמל החודש"
+        },
+        "elec_latest_meter_reading": {
+          "name": "קריאת מונה אחרונה"
+        },
+        "iec_last_elec_usage": {
+          "name": "סך צריכת החשמל בחשבונית האחרונה"
+        },
+        "iec_last_cost": {
+          "name": "סכום החיוב מהחשבונית האחרונה"
+        },
+        "iec_last_number_of_days": {
+          "name": "משך הזמן בחשבונית האחרונה"
+        },
+        "iec_bill_date": {
+          "name": "תאריך חיוב לחשבונית אחרונה"
+        },
+        "iec_last_meter_reading": {
+          "name": "קריאת מונה מחשבונית אחרונה"
+        },
+        "iec_kwh_tariff": {
+          "name": "תעריף תעריף החשמל הביתי לקו\"טש"
+        }
+      }
+    },
+    "config": {
+        "step": {
+            "user": {
+                "title": "מזהה לקוח חברת החשמל",
+                "description": "הכניסו את מזהה הלקוח (תעודת זהות)",
+                "data": {
+                    "user_id": "מזהה הלקוח (תעודת זהות)"
+                }
+            },
+        "mfa": {
+          "title": "OTP",
+          "description": "הכניסו את הקוד החד-פעמי שנשלך אליכם (OTP)",
+          "data": {
+            "totp_secret": "לדוג' 123456"
+          }
+      },
+      "reauth_confirm": {
+        "title": "[%key:common::config_flow::title::reauth%]",
+        "data": {
+          "user_id": "מזהה לקוח",
+          "totp_secret": "לדוג' 123456"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
+      "invalid_auth": "[%key:common::config_flow::error::invalid_auth%]",
+      "invalid_id": "תעודת זהות לא תקנית"
+    },
+    "abort": {
+      "already_configured": "[%key:common::config_flow::abort::already_configured_service%]",
+      "reauth_successful": "[%key:common::config_flow::abort::reauth_successful%]"
+    }
+  }
+}

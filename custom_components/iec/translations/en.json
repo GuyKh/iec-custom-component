@@ -1,4 +1,44 @@
 {
+    "entity": {
+      "sensor": {
+        "elec_forecasted_usage": {
+          "name": "Next bill electric forecasted usage"
+        },
+        "elec_forecasted_cost": {
+          "name": "Next bill electric forecasted cost"
+        },
+        "elec_today_consumption": {
+          "name": "IEC today electric consumption"
+        },
+        "elec_yesterday_consumption": {
+          "name": "IEC yesterday electric consumption"
+        },
+        "elec_this_month_consumption": {
+          "name": "IEC this month electric consumption"
+        },
+        "elec_latest_meter_reading": {
+          "name": "IEC latest meter reading"
+        },
+        "iec_last_elec_usage": {
+          "name": "Last IEC bill electric usage to date"
+        },
+        "iec_last_cost": {
+          "name": "Last IEC bill electric cost"
+        },
+        "iec_last_number_of_days": {
+          "name": "Last IEC bill length in days"
+        },
+        "iec_bill_date": {
+          "name": "Last IEC bill date"
+        },
+        "iec_last_meter_reading": {
+          "name": "Last IEC bill meter reading"
+        },
+        "iec_kwh_tariff": {
+          "name": "IEC kWh tariff"
+        }
+      }
+    },
     "config": {
         "step": {
             "user": {
