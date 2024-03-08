@@ -27,7 +27,7 @@ from iec_api.models.remote_reading import ReadingResolution, RemoteReading, Futu
 
 from .commons import find_reading_by_date
 from .const import DOMAIN, CONF_USER_ID, STATICS_DICT_NAME, STATIC_KWH_TARIFF, INVOICE_DICT_NAME, \
-    FUTURE_CONSUMPTIONS_DICT_NAME, DAILY_READINGS_DICT_NAME, STATIC_CONTRACT, STATIC_BP_NUMBER
+    FUTURE_CONSUMPTIONS_DICT_NAME, DAILY_READINGS_DICT_NAME, STATIC_CONTRACT, STATIC_BP_NUMBER, ILS
 
 _LOGGER = logging.getLogger(__name__)
 TIMEZONE = pytz.timezone("Asia/Jerusalem")
@@ -138,7 +138,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         future_consumption: FutureConsumptionInfo | None = None
         daily_readings: list[RemoteReading] | None = None
-        today_reading: RemoteReadingResponse| None = None
+        today_reading: RemoteReadingResponse | None = None
         if self.is_smart_meter:
             # For some reason, there are differences between sending 2024-03-01 and sending 2024-03-07 (Today)
             # So instead of sending the 1st day of the month, just sending today date
@@ -184,7 +184,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                                                                       ReadingResolution.DAILY, self._contract_id)
                     self._today_reading = today_reading
 
-                await _verify_daily_readings_exist(daily_readings, datetime.today(), device, self._contract_id, self.api,
+                await _verify_daily_readings_exist(daily_readings, datetime.today(), device, self._contract_id,
+                                                   self.api,
                                                    today_reading)
 
                 # fallbacks for future consumption since IEC api is broken :/
@@ -230,9 +231,12 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         devices = await self.api.get_devices(self._contract_id)
         month_ago_time = (datetime.now() - timedelta(weeks=4))
 
+        kwh_price = await self.api.get_kwh_tariff() / 100
+
         for device in devices:
             id_prefix = f"iec_meter_{device.device_number}"
             consumption_statistic_id = f"{DOMAIN}:{id_prefix}_energy_consumption"
+            cost_statistic_id = f"{DOMAIN}:{id_prefix}_energy_est_cost"
 
             last_stat = await get_instance(self.hass).async_add_executor_job(
                 get_last_statistics, self.hass, 1, consumption_statistic_id, True, set()
@@ -276,7 +280,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.hass,
                 readings.data[0].date - timedelta(hours=1),
                 None,
-                {consumption_statistic_id},
+                {cost_statistic_id, consumption_statistic_id},
                 "hour",
                 None,
                 {"sum"},
@@ -287,6 +291,15 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 consumption_sum = 0
             else:
                 consumption_sum = cast(float, stats[consumption_statistic_id][0]["sum"])
+
+            if not stats.get(cost_statistic_id):
+                if not stats.get(consumption_statistic_id):
+                    _LOGGER.debug("No recent cost data")
+                    cost_sum = 0.0
+                else:
+                    cost_sum = cast(float, stats[consumption_statistic_id][0]["sum"]) * kwh_price
+            else:
+                cost_sum = cast(float, stats[cost_statistic_id][0]["sum"])
 
             new_readings: list[RemoteReading] = filter(lambda reading:
                                                        reading.date >= TIMEZONE.localize(
@@ -308,9 +321,20 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR
             )
 
+            cost_metadata = StatisticMetaData(
+                has_mean=False,
+                has_sum=True,
+                name=f"IEC Meter {device.device_number} Estimated Cost",
+                source=DOMAIN,
+                statistic_id=cost_statistic_id,
+                unit_of_measurement=ILS
+            )
+
             consumption_statistics = []
+            cost_statistics = []
             for key, value in readings_by_hour.items():
                 consumption_sum += value
+                cost_sum += value * kwh_price
                 consumption_statistics.append(
                     StatisticData(
                         start=key,
@@ -319,6 +343,18 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     )
                 )
 
+                cost_statistics.append(
+                    StatisticData(
+                        start=key,
+                        sum=cost_sum,
+                        state=value * kwh_price
+                    )
+                )
+
             async_add_external_statistics(
                 self.hass, consumption_metadata, consumption_statistics
+            )
+
+            async_add_external_statistics(
+                self.hass, cost_metadata, cost_statistics
             )
