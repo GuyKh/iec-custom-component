@@ -72,7 +72,7 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         # state_class=SensorStateClass.TOTAL,
         suggested_display_precision=3,
-        value_fn=lambda data: data[FUTURE_CONSUMPTIONS_DICT_NAME].future_consumption,
+        value_fn=lambda data: data[FUTURE_CONSUMPTIONS_DICT_NAME].future_consumption or 0,
     ),
     IecEntityDescription(
         key="elec_forecasted_cost",
@@ -81,7 +81,7 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         # state_class=SensorStateClass.TOTAL,
         suggested_display_precision=2,
         # The API doesn't provide future *cost* so we can try to estimate it by the previous consumption
-        value_fn=lambda data: data[FUTURE_CONSUMPTIONS_DICT_NAME].future_consumption * data[STATICS_DICT_NAME][
+        value_fn=lambda data: (data[FUTURE_CONSUMPTIONS_DICT_NAME].future_consumption or 0) * data[STATICS_DICT_NAME][
             STATIC_KWH_TARIFF]
     ),
     IecEntityDescription(
@@ -116,7 +116,7 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         state_class=SensorStateClass.TOTAL_INCREASING,
         suggested_display_precision=3,
-        value_fn=lambda data: data[FUTURE_CONSUMPTIONS_DICT_NAME].total_import
+        value_fn=lambda data: data[FUTURE_CONSUMPTIONS_DICT_NAME].total_import or 0
     ),
 )
 
