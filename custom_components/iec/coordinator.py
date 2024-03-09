@@ -260,15 +260,16 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     from_date = from_date + timedelta(hours=2)
 
                 _LOGGER.debug(f"Calculated from_date = {from_date.strftime('%Y-%m-%d %H:%M:%S')}")
-                if (datetime.today() - from_date).days <= 0:
+                today = datetime.today()
+                if today.date() == from_stat.date() :
                     _LOGGER.debug("The date to fetch is today or later, replacing it with Today at 01:00:00")
-                    from_date = TIMEZONE.localize(datetime.today().replace(hour=1, minute=0, second=0, microsecond=0))
+                    from_date = TIMEZONE.localize(today.replace(hour=1, minute=0, second=0, microsecond=0))
 
                 _LOGGER.debug(f"Fetching consumption from {from_date.strftime('%Y-%m-%d %H:%M:%S')}")
                 readings = await self.api.get_remote_reading(device.device_number, int(device.device_code),
                                                              from_date, from_date,
                                                              ReadingResolution.DAILY, self._contract_id)
-                if from_date.date() == datetime.today().date():
+                if from_date.date() == today.date():
                     self._today_reading = readings
 
             if not readings or not readings.data:
