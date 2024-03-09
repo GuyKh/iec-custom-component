@@ -261,7 +261,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
                 _LOGGER.debug(f"Calculated from_date = {from_date.strftime('%Y-%m-%d %H:%M:%S')}")
                 today = datetime.today()
-                if today.date() == from_stat.date() :
+                if today.date() == from_date.date() :
                     _LOGGER.debug("The date to fetch is today or later, replacing it with Today at 01:00:00")
                     from_date = TIMEZONE.localize(today.replace(hour=1, minute=0, second=0, microsecond=0))
 
