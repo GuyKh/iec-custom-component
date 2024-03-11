@@ -20,6 +20,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import aiohttp_client
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from iec_api.iec_client import IecClient
+from iec_api.models.contract import Contract
 from iec_api.models.device import Device
 from iec_api.models.exceptions import IECError
 from iec_api.models.jwt import JWT
@@ -27,7 +28,8 @@ from iec_api.models.remote_reading import ReadingResolution, RemoteReading, Futu
 
 from .commons import find_reading_by_date
 from .const import DOMAIN, CONF_USER_ID, STATICS_DICT_NAME, STATIC_KWH_TARIFF, INVOICE_DICT_NAME, \
-    FUTURE_CONSUMPTIONS_DICT_NAME, DAILY_READINGS_DICT_NAME, STATIC_CONTRACT, STATIC_BP_NUMBER, ILS
+    FUTURE_CONSUMPTIONS_DICT_NAME, DAILY_READINGS_DICT_NAME, STATIC_BP_NUMBER, ILS, CONF_BP_NUMBER, \
+    CONF_SELECTED_CONTRACTS, CONTRACT_DICT_NAME
 
 _LOGGER = logging.getLogger(__name__)
 TIMEZONE = pytz.timezone("Asia/Jerusalem")
@@ -59,7 +61,7 @@ async def _verify_daily_readings_exist(daily_readings: list[RemoteReading], desi
                       f' is present: {daily_reading.value}')
 
 
-class IecApiCoordinator(DataUpdateCoordinator[dict[str, Any]]):
+class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
     """Handle fetching IEC data, updating sensors and inserting statistics."""
 
     def __init__(
@@ -77,10 +79,10 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             update_interval=timedelta(hours=1),
         )
         self._config_entry = config_entry
-        self._bp_number = None
-        self._contract_id = None
+        self._bp_number = config_entry.data.get(CONF_BP_NUMBER)
+        self._contracts = config_entry.data.get(CONF_SELECTED_CONTRACTS)
         self._entry_data = config_entry.data
-        self._today_reading = None
+        self._today_readings = dict()
         self.api = IecClient(
             self._entry_data[CONF_USER_ID],
             session=aiohttp_client.async_get_clientsession(hass, family=socket.AF_INET)
@@ -99,7 +101,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _async_update_data(
             self,
-    ) -> dict[str, Any]:
+    ) -> dict[str, dict[str, Any]]:
         """Fetch data from API endpoint."""
         if self._first_load:
             _LOGGER.debug("Loading API token from config entry")
@@ -124,111 +126,118 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             customer = await self.api.get_customer()
             self._bp_number = customer.bp_number
 
-        if not self._contract_id:
-            contract = await self.api.get_default_contract(self._bp_number)
-            self.is_smart_meter = contract.smart_meter
-            self._contract_id = contract.contract_id
+        all_contracts: list[Contract] = await self.api.get_contracts(self._bp_number)
+        if not self._contracts:
+            self._contracts = [contract.contract_id for contract in all_contracts if contract.status == 1]
 
-        # Because IEC API provides historical usage/cost with a delay of a couple of days
-        # we need to insert data into statistics.
-        await self._insert_statistics()
-        billing_invoices = await self.api.get_billing_invoices(self._bp_number, self._contract_id)
-        billing_invoices.invoices.sort(key=lambda inv: inv.full_date, reverse=True)
-        last_invoice = billing_invoices.invoices[0]
+        contracts: dict[str, Contract] = {c.contract_id: c for c in all_contracts}
 
-        future_consumption: FutureConsumptionInfo | None = None
-        daily_readings: list[RemoteReading] | None = None
-        today_reading: RemoteReadingResponse | None = None
-        if self.is_smart_meter:
-            # For some reason, there are differences between sending 2024-03-01 and sending 2024-03-07 (Today)
-            # So instead of sending the 1st day of the month, just sending today date
-            # monthly_report_req_date: datetime = TIMEZONE.localize(datetime.today().replace(day=1, hour=0, minute=0,
-            #                                                                                second=0, microsecond=0))
-            monthly_report_req_date: datetime = TIMEZONE.localize(datetime.today().replace(hour=1, minute=0,
-                                                                                           second=0, microsecond=0))
-            devices = await self.api.get_devices(self._contract_id)
-            for device in devices:
-                remote_reading = await self.api.get_remote_reading(device.device_number, int(device.device_code),
-                                                                   monthly_report_req_date,
-                                                                   monthly_report_req_date, ReadingResolution.MONTHLY,
-                                                                   self._contract_id)
-                if remote_reading:
-                    future_consumption = remote_reading.future_consumption_info
-                    daily_readings = remote_reading.data
-
-                weekly_future_consumption = None
-                if datetime.today().day == 1:
-                    # if today's the 1st of the month, "yesterday" is on a different month
-                    yesterday: datetime = monthly_report_req_date - timedelta(days=1)
-                    remote_reading = await self.api.get_remote_reading(device.device_number, int(device.device_code),
-                                                                       yesterday, yesterday,
-                                                                       ReadingResolution.WEEKLY, self._contract_id)
-                    if remote_reading:
-                        daily_readings += remote_reading.data
-                        weekly_future_consumption = remote_reading.future_consumption_info
-
-                        # Remove duplicates
-                        daily_readings = list(dict.fromkeys(daily_readings))
-
-                        # Sort by Date
-                        daily_readings.sort(key=lambda x: x.date)
-
-                await _verify_daily_readings_exist(daily_readings, datetime.today() - timedelta(days=1),
-                                                   device, self._contract_id, self.api)
-
-                today_reading = self._today_reading
-
-                if not self._today_reading:
-                    today_reading = await self.api.get_remote_reading(device.device_number, int(device.device_code),
-                                                                      datetime.today(), datetime.today(),
-                                                                      ReadingResolution.DAILY, self._contract_id)
-                    self._today_reading = today_reading
-
-                await _verify_daily_readings_exist(daily_readings, datetime.today(), device, self._contract_id,
-                                                   self.api,
-                                                   today_reading)
-
-                # fallbacks for future consumption since IEC api is broken :/
-                if not future_consumption.future_consumption:
-                    if weekly_future_consumption and weekly_future_consumption.future_consumption:
-                        future_consumption = weekly_future_consumption
-                    elif self._today_reading and self._today_reading.future_consumption_info.future_consumption:
-                        future_consumption = self._today_reading.future_consumption_info
-                    else:
-                        req_date = datetime.today() - timedelta(days=2)
-                        two_days_ago_reading = await self.api.get_remote_reading(device.device_number,
-                                                                                 int(device.device_code),
-                                                                                 req_date, req_date,
-                                                                                 ReadingResolution.DAILY,
-                                                                                 self._contract_id)
-
-                        if two_days_ago_reading:
-                            future_consumption = two_days_ago_reading.future_consumption_info
-                        else:
-                            _LOGGER.debug("Failed fetching FutureConsumption, data in IEC API is corrupted")
-
-        static_data = {
-            STATIC_KWH_TARIFF: (await self.api.get_kwh_tariff()) / 100,
-            STATIC_CONTRACT: self._contract_id,
+        tariff = await self.api.get_kwh_tariff() / 100
+        data = {STATICS_DICT_NAME: {
+            STATIC_KWH_TARIFF: tariff,
             STATIC_BP_NUMBER: self._bp_number
-        }
+        }}
 
-        data = {STATICS_DICT_NAME: static_data, INVOICE_DICT_NAME: last_invoice,
-                FUTURE_CONSUMPTIONS_DICT_NAME: future_consumption,
-                DAILY_READINGS_DICT_NAME: daily_readings}
+        for contract_id in self._contracts:
+            # Because IEC API provides historical usage/cost with a delay of a couple of days
+            # we need to insert data into statistics.
+            await self._insert_statistics(contract_id, contracts.get(contract_id).smart_meter)
+            billing_invoices = await self.api.get_billing_invoices(self._bp_number, contract_id)
+            billing_invoices.invoices.sort(key=lambda inv: inv.full_date, reverse=True)
+            last_invoice = billing_invoices.invoices[0]
 
-        # Clean today reading for next reading cycle
-        self._today_reading = None
+            future_consumption: FutureConsumptionInfo | None = None
+            daily_readings: list[RemoteReading] | None = None
+            today_reading: RemoteReadingResponse | None = None
+            if contracts.get(contract_id).smart_meter:
+                # For some reason, there are differences between sending 2024-03-01 and sending 2024-03-07 (Today)
+                # So instead of sending the 1st day of the month, just sending today date
+
+                monthly_report_req_date: datetime = TIMEZONE.localize(datetime.today().replace(hour=1, minute=0,
+                                                                                               second=0, microsecond=0))
+                devices = await self.api.get_devices(contract_id)
+                for device in devices:
+                    remote_reading = await self.api.get_remote_reading(device.device_number, int(device.device_code),
+                                                                       monthly_report_req_date,
+                                                                       monthly_report_req_date,
+                                                                       ReadingResolution.MONTHLY,
+                                                                       contract_id)
+                    if remote_reading:
+                        future_consumption = remote_reading.future_consumption_info
+                        daily_readings = remote_reading.data
+
+                    weekly_future_consumption = None
+                    if datetime.today().day == 1:
+                        # if today's the 1st of the month, "yesterday" is on a different month
+                        yesterday: datetime = monthly_report_req_date - timedelta(days=1)
+                        remote_reading = await self.api.get_remote_reading(device.device_number,
+                                                                           int(device.device_code),
+                                                                           yesterday, yesterday,
+                                                                           ReadingResolution.WEEKLY, contract_id)
+                        if remote_reading:
+                            daily_readings += remote_reading.data
+                            weekly_future_consumption = remote_reading.future_consumption_info
+
+                            # Remove duplicates
+                            daily_readings = list(dict.fromkeys(daily_readings))
+
+                            # Sort by Date
+                            daily_readings.sort(key=lambda x: x.date)
+
+                    await _verify_daily_readings_exist(daily_readings, datetime.today() - timedelta(days=1),
+                                                       device, contract_id, self.api)
+
+                    today_reading = self._today_readings.get(contract_id)
+
+                    if not self._today_readings.get(contract_id):
+                        today_reading = await self.api.get_remote_reading(device.device_number, int(device.device_code),
+                                                                          datetime.today(), datetime.today(),
+                                                                          ReadingResolution.DAILY, contract_id)
+                        self._today_readings[contract_id] = today_reading
+
+                    await _verify_daily_readings_exist(daily_readings, datetime.today(), device, contract_id,
+                                                       self.api,
+                                                       today_reading)
+
+                    # fallbacks for future consumption since IEC api is broken :/
+                    if not future_consumption.future_consumption:
+                        if weekly_future_consumption and weekly_future_consumption.future_consumption:
+                            future_consumption = weekly_future_consumption
+                        elif (self._today_readings.get(contract_id)
+                              and self._today_readings.get(contract_id).future_consumption_info.future_consumption):
+                            future_consumption = self._today_readings.get(contract_id).future_consumption_info
+                        else:
+                            req_date = datetime.today() - timedelta(days=2)
+                            two_days_ago_reading = await self.api.get_remote_reading(device.device_number,
+                                                                                     int(device.device_code),
+                                                                                     req_date, req_date,
+                                                                                     ReadingResolution.DAILY,
+                                                                                     contract_id)
+
+                            if two_days_ago_reading:
+                                future_consumption = two_days_ago_reading.future_consumption_info
+                            else:
+                                _LOGGER.debug("Failed fetching FutureConsumption, data in IEC API is corrupted")
+
+                data[contract_id] = {CONTRACT_DICT_NAME: contracts.get(contract_id),
+                                     INVOICE_DICT_NAME: last_invoice,
+                                     FUTURE_CONSUMPTIONS_DICT_NAME: future_consumption,
+                                     DAILY_READINGS_DICT_NAME: daily_readings,
+                                     STATICS_DICT_NAME: {STATIC_KWH_TARIFF: tariff} # workaround
+                                     }
+
+            # Clean today reading for next reading cycle
+            self._today_readings = {}
         return data
 
-    async def _insert_statistics(self) -> None:
-        if not self.is_smart_meter:
-            _LOGGER.info("IEC Contract doesn't contain Smart Meters, not adding statistics")
+    async def _insert_statistics(self, contract_id: str, is_smart_meter: bool) -> None:
+        if not is_smart_meter:
+            _LOGGER.info(f"IEC Contract {contract_id} doesn't contain Smart Meters, not adding statistics")
             # Support only smart meters at the moment
             return
 
-        _LOGGER.debug(f"Updating statistics for IEC Contract {self._contract_id}")
-        devices = await self.api.get_devices(self._contract_id)
+        _LOGGER.debug(f"Updating statistics for IEC Contract {contract_id}")
+        devices = await self.api.get_devices(contract_id)
         month_ago_time = (datetime.now() - timedelta(weeks=4))
 
         kwh_price = await self.api.get_kwh_tariff() / 100
@@ -249,7 +258,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 readings = await self.api.get_remote_reading(device.device_number, int(device.device_code),
                                                              month_ago_time,
                                                              month_ago_time, ReadingResolution.DAILY,
-                                                             self._contract_id)
+                                                             contract_id)
             else:
                 last_stat_time = last_stat[consumption_statistic_id][0]["start"]
                 # API returns daily data, so need to increase the start date by 4 hrs to get the next day
@@ -261,16 +270,16 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
                 _LOGGER.debug(f"Calculated from_date = {from_date.strftime('%Y-%m-%d %H:%M:%S')}")
                 today = datetime.today()
-                if today.date() == from_date.date() :
+                if today.date() == from_date.date():
                     _LOGGER.debug("The date to fetch is today or later, replacing it with Today at 01:00:00")
                     from_date = TIMEZONE.localize(today.replace(hour=1, minute=0, second=0, microsecond=0))
 
                 _LOGGER.debug(f"Fetching consumption from {from_date.strftime('%Y-%m-%d %H:%M:%S')}")
                 readings = await self.api.get_remote_reading(device.device_number, int(device.device_code),
                                                              from_date, from_date,
-                                                             ReadingResolution.DAILY, self._contract_id)
+                                                             ReadingResolution.DAILY, contract_id)
                 if from_date.date() == today.date():
-                    self._today_reading = readings
+                    self._today_readings[contract_id] = readings
 
             if not readings or not readings.data:
                 _LOGGER.debug("No recent usage data. Skipping update")

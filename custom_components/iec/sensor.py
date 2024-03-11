@@ -23,7 +23,7 @@ from iec_api.models.remote_reading import RemoteReading
 
 from .commons import find_reading_by_date
 from .const import DOMAIN, ILS, STATICS_DICT_NAME, STATIC_KWH_TARIFF, FUTURE_CONSUMPTIONS_DICT_NAME, INVOICE_DICT_NAME, \
-    ILS_PER_KWH, DAILY_READINGS_DICT_NAME, STATIC_CONTRACT, EMPTY_REMOTE_READING
+    ILS_PER_KWH, DAILY_READINGS_DICT_NAME, EMPTY_REMOTE_READING, CONTRACT_DICT_NAME
 from .coordinator import IecApiCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -166,7 +166,7 @@ STATIC_SENSORS: tuple[IecEntityDescription, ...] = (
         device_class=SensorDeviceClass.MONETARY,
         native_unit_of_measurement=ILS_PER_KWH,
         suggested_display_precision=4,
-        value_fn=lambda data: data[STATICS_DICT_NAME][STATIC_KWH_TARIFF]
+        value_fn=lambda data: data[STATIC_KWH_TARIFF]
     ),
 )
 
@@ -179,30 +179,32 @@ async def async_setup_entry(
     coordinator: IecApiCoordinator = hass.data[DOMAIN][entry.entry_id]
     entities: list[SensorEntity] = []
 
-    if coordinator.is_smart_meter:
-        sensors_desc: tuple[IecEntityDescription, ...] = ELEC_SENSORS + SMART_ELEC_SENSORS
-    else:
-        sensors_desc: tuple[IecEntityDescription, ...] = ELEC_SENSORS
-    # sensors_desc: tuple[IecEntityDescription, ...] = ELEC_SENSORS
+    for contract_key in coordinator.data:
+        if contract_key == STATICS_DICT_NAME:
+            for sensor_desc in STATIC_SENSORS:
+                entities.append(
+                    IecSensor(
+                        coordinator,
+                        sensor_desc,
+                        STATICS_DICT_NAME
+                    )
+                )
+        else:
+            if coordinator.data[contract_key][CONTRACT_DICT_NAME].smart_meter:
+                sensors_desc: tuple[IecEntityDescription, ...] = ELEC_SENSORS + SMART_ELEC_SENSORS
+            else:
+                sensors_desc: tuple[IecEntityDescription, ...] = ELEC_SENSORS
+            # sensors_desc: tuple[IecEntityDescription, ...] = ELEC_SENSORS
 
-    contract_id = coordinator.data[STATICS_DICT_NAME][STATIC_CONTRACT]
-    for sensor_desc in sensors_desc:
-        entities.append(
-            IecSensor(
-                coordinator,
-                sensor_desc,
-                contract_id
-            )
-        )
-
-    for sensor_desc in STATIC_SENSORS:
-        entities.append(
-            IecSensor(
-                coordinator,
-                sensor_desc,
-                STATICS_DICT_NAME
-            )
-        )
+            contract_id = coordinator.data[contract_key][CONTRACT_DICT_NAME].contract_id
+            for sensor_desc in sensors_desc:
+                entities.append(
+                    IecSensor(
+                        coordinator,
+                        sensor_desc,
+                        contract_id
+                    )
+                )
 
     async_add_entities(entities)
 
@@ -217,7 +219,7 @@ class IecSensor(CoordinatorEntity[IecApiCoordinator], SensorEntity):
             self,
             coordinator: IecApiCoordinator,
             description: IecEntityDescription,
-            contract_id: int,
+            contract_id: str,
     ) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
@@ -231,6 +233,6 @@ class IecSensor(CoordinatorEntity[IecApiCoordinator], SensorEntity):
         """Return the state."""
         if self.coordinator.data is not None:
             return self.entity_description.value_fn(
-                self.coordinator.data
+                self.coordinator.data.get(self.contract_id)
             )
         return None

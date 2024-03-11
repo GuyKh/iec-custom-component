@@ -11,11 +11,13 @@ from homeassistant.const import CONF_API_TOKEN
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
+from homeassistant.helpers.config_validation import multi_select
 from iec_api.iec_client import IecClient
 from iec_api.models.exceptions import IECError
 from iec_api.models.jwt import JWT
 
-from .const import CONF_TOTP_SECRET, DOMAIN, CONF_USER_ID
+from .const import CONF_TOTP_SECRET, DOMAIN, CONF_USER_ID, CONF_BP_NUMBER, CONF_MAIN_CONTRACT_ID, \
+    CONF_AVAILABLE_CONTRACTS, CONF_SELECTED_CONTRACTS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -105,7 +107,6 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         client: IecClient = self.client
 
         errors: dict[str, str] = {}
-        _LOGGER.debug(f"User input in mfa: {user_input}")
         if user_input is not None and user_input.get(CONF_TOTP_SECRET) is not None:
             data = {**self.data, **user_input}
             errors = await _validate_login(self.hass, data, client)
@@ -115,7 +116,19 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 if data.get(CONF_TOTP_SECRET):
                     data.pop(CONF_TOTP_SECRET)
 
-                return self._async_create_iec_entry(data)
+                customer = await client.get_customer()
+                data[CONF_BP_NUMBER] = customer.bp_number
+                data[CONF_MAIN_CONTRACT_ID] = customer.accounts[0].main_contract_id
+
+                contracts = await client.get_contracts(customer.bp_number)
+                contract_ids = [contract.contract_id for contract in contracts if contract.status == 1]
+                if len(contract_ids) == 1:
+                    data[CONF_SELECTED_CONTRACTS] = [contract_ids[0]]
+                    return self._async_create_iec_entry(data)
+                else:
+                    data[CONF_AVAILABLE_CONTRACTS] = contract_ids
+                    self.data = data
+                    return await self.async_step_select_contract()
 
         if errors:
             schema = {
@@ -141,6 +154,41 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_create_entry(
             title=f"IEC Account ({data[CONF_USER_ID]})",
             data=data,
+        )
+
+    async def async_step_select_contract(
+            self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Handle Select Contract step."""
+        assert self.data is not None
+        assert self.data.get(CONF_USER_ID) is not None
+        assert self.data.get(CONF_API_TOKEN) is not None
+        assert self.data.get(CONF_BP_NUMBER) is not None
+
+        client: IecClient = self.client
+
+        errors: dict[str, str] = {}
+        if user_input is not None and user_input.get(CONF_SELECTED_CONTRACTS) is not None:
+            if len(user_input.get(CONF_SELECTED_CONTRACTS)) == 0:
+                errors["base"] = "no_contracts"
+            else:
+                data = {**self.data, **user_input}
+                if data.get(CONF_AVAILABLE_CONTRACTS):
+                    data.pop(CONF_AVAILABLE_CONTRACTS)
+
+                self.data = data
+                return self._async_create_iec_entry(data)
+
+        schema = {
+            vol.Required(CONF_SELECTED_CONTRACTS, default=[self.data.get(CONF_MAIN_CONTRACT_ID)]): multi_select(
+                self.data.get(CONF_AVAILABLE_CONTRACTS)
+            )
+        }
+
+        return self.async_show_form(
+            step_id="select_contracts",
+            data_schema=vol.Schema(schema),
+            errors=errors,
         )
 
     async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> FlowResult:
