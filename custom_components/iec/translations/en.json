@@ -1,59 +1,63 @@
 {
-    "entity": {
-      "sensor": {
-        "elec_forecasted_usage": {
-          "name": "Next bill electric forecasted usage"
-        },
-        "elec_forecasted_cost": {
-          "name": "Next bill electric forecasted cost"
-        },
-        "elec_today_consumption": {
-          "name": "IEC today electric consumption"
-        },
-        "elec_yesterday_consumption": {
-          "name": "IEC yesterday electric consumption"
-        },
-        "elec_this_month_consumption": {
-          "name": "IEC this month electric consumption"
-        },
-        "elec_latest_meter_reading": {
-          "name": "IEC latest meter reading"
-        },
-        "iec_last_elec_usage": {
-          "name": "Last IEC bill electric usage to date"
-        },
-        "iec_last_cost": {
-          "name": "Last IEC bill electric cost"
-        },
-        "iec_last_number_of_days": {
-          "name": "Last IEC bill length in days"
-        },
-        "iec_bill_date": {
-          "name": "Last IEC bill date"
-        },
-        "iec_last_meter_reading": {
-          "name": "Last IEC bill meter reading"
-        },
-        "iec_kwh_tariff": {
-          "name": "IEC kWh tariff"
-        }
+  "entity": {
+    "sensor": {
+      "elec_forecasted_usage": {
+        "name": "Next bill electric forecasted usage"
+      },
+      "elec_forecasted_cost": {
+        "name": "Next bill electric forecasted cost"
+      },
+      "elec_today_consumption": {
+        "name": "IEC today electric consumption"
+      },
+      "elec_yesterday_consumption": {
+        "name": "IEC yesterday electric consumption"
+      },
+      "elec_this_month_consumption": {
+        "name": "IEC this month electric consumption"
+      },
+      "elec_latest_meter_reading": {
+        "name": "IEC latest meter reading"
+      },
+      "iec_last_elec_usage": {
+        "name": "Last IEC bill electric usage to date"
+      },
+      "iec_last_cost": {
+        "name": "Last IEC bill electric cost"
+      },
+      "iec_last_number_of_days": {
+        "name": "Last IEC bill length in days"
+      },
+      "iec_bill_date": {
+        "name": "Last IEC bill date"
+      },
+      "iec_last_meter_reading": {
+        "name": "Last IEC bill meter reading"
+      },
+      "iec_kwh_tariff": {
+        "name": "IEC kWh tariff"
       }
-    },
-    "config": {
-        "step": {
-            "user": {
-                "title": "IEC Account ID",
-                "description": "Enter your IEC User ID (תעודת זהות)",
-                "data": {
-                    "user_id": "User ID"
-                }
-            },
-        "mfa": {
-          "title": "OTP",
-          "description": "Enter your One Time Password (OTP)",
-          "data": {
-            "totp_secret": "e.g. 123456"
-          }
+    }
+  },
+  "config": {
+    "step": {
+      "user": {
+        "title": "IEC Account ID",
+        "description": "Enter your IEC User ID (תעודת זהות)",
+        "data": {
+          "user_id": "User ID"
+        }
+      },
+      "mfa": {
+        "title": "OTP",
+        "description": "Enter your One Time Password (OTP)",
+        "data": {
+          "totp_secret": "e.g. 123456"
+        }
+      },
+      "select_contract": {
+        "title": "Select Contract",
+        "description": "Select which contract to use"
       },
       "reauth_confirm": {
         "title": "[%key:common::config_flow::title::reauth%]",
@@ -66,7 +70,9 @@
     "error": {
       "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
       "invalid_auth": "[%key:common::config_flow::error::invalid_auth%]",
-      "invalid_id": "Invalid Israeli ID"
+      "invalid_id": "Invalid Israeli ID",
+      "no_contract": "You should select at least one contract"
+
     },
     "abort": {
       "already_configured": "[%key:common::config_flow::abort::already_configured_service%]",
