@@ -82,7 +82,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         self._bp_number = config_entry.data.get(CONF_BP_NUMBER)
         self._contracts = config_entry.data.get(CONF_SELECTED_CONTRACTS)
         self._entry_data = config_entry.data
-        self._today_readings = dict()
+        self._today_readings = {}
         self.api = IecClient(
             self._entry_data[CONF_USER_ID],
             session=aiohttp_client.async_get_clientsession(hass, family=socket.AF_INET)
