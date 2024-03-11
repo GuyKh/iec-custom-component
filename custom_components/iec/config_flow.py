@@ -165,8 +165,6 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         assert self.data.get(CONF_API_TOKEN) is not None
         assert self.data.get(CONF_BP_NUMBER) is not None
 
-        client: IecClient = self.client
-
         errors: dict[str, str] = {}
         if user_input is not None and user_input.get(CONF_SELECTED_CONTRACTS) is not None:
             if len(user_input.get(CONF_SELECTED_CONTRACTS)) == 0:
