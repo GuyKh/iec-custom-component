@@ -49,6 +49,29 @@ logger:
 
 <!---->
 
+## Frequently Asked Questions
+
+#### How often is the data fetched?
+The component currently fetches data from IEC every hour, but IEC doesn't update the data very often and they don't really have a consistant behavior, it could arrive with 2 days delay.
+
+#### Can this component be used even if I'm using a private electric company? 
+**Yes**. However, the only difference is that in the Invoices you'll see balance = `0` since you're paying to the private company
+
+#### Should I enter my configuration credentials every time?
+**No**. You should do it only once when configuring the component.
+
+
+#### I have a "dumb" meter, would this component still work for me.
+**Yes, But...**. you would only get a subset of sensors, based on your Invoice information.
+
+<!---->
+
+## Using Postman Collection for calling the IEC API
+
+If you want to use Postman to get the API calls - please read the [Postman Collections Guide](https://github.com/GuyKh/py-iec-api/blob/main/POSTMAN.md)
+
+<!---->
+
 ## Contributions are welcome!
 
 If you want to contribute to this please read the [Contribution guidelines](CONTRIBUTING.md)
