@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -33,7 +33,7 @@ _LOGGER = logging.getLogger(__name__)
 class IecEntityDescriptionMixin:
     """Mixin values for required keys."""
 
-    value_fn: Callable[[dict | tuple], str | float] | None = None
+    value_fn: Callable[[dict | tuple], str | float | date] | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -149,6 +149,11 @@ ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         key="iec_bill_date",
         device_class=SensorDeviceClass.DATE,
         value_fn=lambda data: data[INVOICE_DICT_NAME].to_date.date(),
+    ),
+    IecEntityDescription(
+        key="iec_bill_last_payment_date",
+        device_class=SensorDeviceClass.DATE,
+        value_fn=lambda data: datetime.strptime(data[INVOICE_DICT_NAME].last_date, "%d/%M/%Y").date(),
     ),
     IecEntityDescription(
         key="iec_last_meter_reading",
