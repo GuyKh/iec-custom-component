@@ -31,6 +31,9 @@
       "iec_bill_date": {
         "name": "Last IEC bill date {multi_contract}"
       },
+      "iec_bill_last_payment_date": {
+        "name": "Last IEC bill payment date {multi_contract}"
+      },
       "iec_last_meter_reading": {
         "name": "Last IEC bill meter reading {multi_contract}"
       },

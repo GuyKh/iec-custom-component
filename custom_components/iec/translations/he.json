@@ -29,10 +29,13 @@
         "name": "משך הזמן בחשבונית האחרונה {multi_contract}"
       },
       "iec_bill_date": {
-        "name": "תאריך חיוב לחשבונית אחרונה {multi_contract}"
+        "name": "תאריך חיוב לחשבונית האחרונה {multi_contract}"
+      },
+      "iec_bill_last_payment_date": {
+        "name": "תאריך אחרון לתשלון של החשבונית האחרונה {multi_contract}"
       },
       "iec_last_meter_reading": {
-        "name": "קריאת מונה מחשבונית אחרונה {multi_contract}"
+        "name": "קריאת מונה מחשבונית האחרונה {multi_contract}"
       },
       "iec_kwh_tariff": {
         "name": "תעריף החשמל הביתי לקוט\"ש"
