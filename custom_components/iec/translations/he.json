@@ -35,7 +35,7 @@
         "name": "תאריך אחרון לתשלון של החשבונית האחרונה {multi_contract}"
       },
       "iec_last_meter_reading": {
-        "name": "קריאת מונה מחשבונית האחרונה {multi_contract}"
+        "name": "קריאת מונה מהחשבונית האחרונה {multi_contract}"
       },
       "iec_kwh_tariff": {
         "name": "תעריף החשמל הביתי לקוט\"ש"
