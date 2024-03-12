@@ -55,7 +55,7 @@
           "totp_secret": "לדוג' 123456"
         }
       },
-      "select_contract": {
+      "select_contracts": {
         "title": "בחירת חשבון חוזה",
         "description": "בחרו באיזה חשבון חוזה להשתמש"
       },

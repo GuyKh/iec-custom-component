@@ -128,7 +128,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 else:
                     data[CONF_AVAILABLE_CONTRACTS] = contract_ids
                     self.data = data
-                    return await self.async_step_select_contract()
+                    return await self.async_step_select_contracts()
 
         if errors:
             schema = {
@@ -156,7 +156,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data=data,
         )
 
-    async def async_step_select_contract(
+    async def async_step_select_contracts(
             self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle Select Contract step."""

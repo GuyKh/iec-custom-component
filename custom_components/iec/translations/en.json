@@ -55,7 +55,7 @@
           "totp_secret": "e.g. 123456"
         }
       },
-      "select_contract": {
+      "select_contracts": {
         "title": "Select Contract",
         "description": "Select which contract to use"
       },
