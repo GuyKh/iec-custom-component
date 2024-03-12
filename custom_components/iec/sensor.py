@@ -179,6 +179,8 @@ async def async_setup_entry(
     coordinator: IecApiCoordinator = hass.data[DOMAIN][entry.entry_id]
     entities: list[SensorEntity] = []
 
+    is_multi_contract = len(list(filter(lambda key: key != STATICS_DICT_NAME, list(coordinator.data.keys())))) > 1
+
     for contract_key in coordinator.data:
         if contract_key == STATICS_DICT_NAME:
             for sensor_desc in STATIC_SENSORS:
@@ -186,7 +188,8 @@ async def async_setup_entry(
                     IecSensor(
                         coordinator,
                         sensor_desc,
-                        STATICS_DICT_NAME
+                        STATICS_DICT_NAME,
+                        is_multi_contract=False
                     )
                 )
         else:
@@ -202,7 +205,8 @@ async def async_setup_entry(
                     IecSensor(
                         coordinator,
                         sensor_desc,
-                        contract_id
+                        contract_id,
+                        is_multi_contract
                     )
                 )
 
@@ -220,6 +224,7 @@ class IecSensor(CoordinatorEntity[IecApiCoordinator], SensorEntity):
             coordinator: IecApiCoordinator,
             description: IecEntityDescription,
             contract_id: str,
+            is_multi_contract: bool
     ) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
@@ -227,6 +232,19 @@ class IecSensor(CoordinatorEntity[IecApiCoordinator], SensorEntity):
         self.contract_id = contract_id
         self._attr_unique_id = f"{str(contract_id)}_{description.key}"
         self._attr_translation_key = f"{description.key}"
+        self._attr_translation_placeholders = {"multi_contract": f"of {contract_id}"}
+
+        attributes = {
+            "contract_id": contract_id
+        }
+
+        if is_multi_contract:
+            attributes["is_multi_contract"] = is_multi_contract
+            self._attr_translation_placeholders = {"multi_contract": f" of {contract_id}"}
+        else:
+            self._attr_translation_placeholders = {"multi_contract": ""}
+
+        self._attr_extra_state_attributes = attributes
 
     @property
     def native_value(self) -> StateType:

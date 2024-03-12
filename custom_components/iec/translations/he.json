@@ -2,37 +2,37 @@
   "entity": {
     "sensor": {
       "elec_forecasted_usage": {
-        "name": "סך צריכת החשמל בחשבונית הבאה"
+        "name": "סך צריכת החשמל בחשבונית הבאה {multi_contract}"
       },
       "elec_forecasted_cost": {
-        "name": "סך עלות צריכת החשמל בחשבונית הבאה"
+        "name": "סך עלות צריכת החשמל בחשבונית הבאה {multi_contract}"
       },
       "elec_today_consumption": {
-        "name": "סך צריכת החשמל היום"
+        "name": "סך צריכת החשמל היום {multi_contract}"
       },
       "elec_yesterday_consumption": {
-        "name": "סך צריכת החשמל אתמול"
+        "name": "סך צריכת החשמל אתמול {multi_contract}"
       },
       "elec_this_month_consumption": {
-        "name": "סך צריכת החשמל החודש"
+        "name": "סך צריכת החשמל החודש {multi_contract}"
       },
       "elec_latest_meter_reading": {
-        "name": "קריאת מונה אחרונה"
+        "name": "קריאת מונה אחרונה {multi_contract}"
       },
       "iec_last_elec_usage": {
-        "name": "סך צריכת החשמל בחשבונית האחרונה"
+        "name": "סך צריכת החשמל בחשבונית האחרונה {multi_contract}"
       },
       "iec_last_cost": {
-        "name": "סכום החיוב מהחשבונית האחרונה"
+        "name": "סכום החיוב מהחשבונית האחרונה {multi_contract}"
       },
       "iec_last_number_of_days": {
-        "name": "משך הזמן בחשבונית האחרונה"
+        "name": "משך הזמן בחשבונית האחרונה {multi_contract}"
       },
       "iec_bill_date": {
-        "name": "תאריך חיוב לחשבונית אחרונה"
+        "name": "תאריך חיוב לחשבונית אחרונה {multi_contract}"
       },
       "iec_last_meter_reading": {
-        "name": "קריאת מונה מחשבונית אחרונה"
+        "name": "קריאת מונה מחשבונית אחרונה {multi_contract}"
       },
       "iec_kwh_tariff": {
         "name": "תעריף החשמל הביתי לקוט\"ש"
