@@ -16,7 +16,7 @@ from iec_api.iec_client import IecClient
 from iec_api.models.exceptions import IECError
 from iec_api.models.jwt import JWT
 
-from .const import CONF_TOTP_SECRET, DOMAIN, CONF_USER_ID, CONF_BP_NUMBER, CONF_MAIN_CONTRACT_ID, \
+from .const import CONF_TOTP_SECRET, DOMAIN, CONF_USER_ID, CONF_BP_NUMBER, \
     CONF_AVAILABLE_CONTRACTS, CONF_SELECTED_CONTRACTS
 
 _LOGGER = logging.getLogger(__name__)
@@ -118,7 +118,6 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
                 customer = await client.get_customer()
                 data[CONF_BP_NUMBER] = customer.bp_number
-                data[CONF_MAIN_CONTRACT_ID] = customer.accounts[0].main_contract_id
 
                 contracts = await client.get_contracts(customer.bp_number)
                 contract_ids = [contract.contract_id for contract in contracts if contract.status == 1]
@@ -126,7 +125,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     data[CONF_SELECTED_CONTRACTS] = [contract_ids[0]]
                     return self._async_create_iec_entry(data)
                 else:
-                    data[CONF_AVAILABLE_CONTRACTS] = contract_ids
+                    data[CONF_AVAILABLE_CONTRACTS] = [cid.lstrip('0') for cid in contract_ids]
                     self.data = data
                     return await self.async_step_select_contracts()
 
@@ -178,7 +177,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return self._async_create_iec_entry(data)
 
         schema = {
-            vol.Required(CONF_SELECTED_CONTRACTS, default=[self.data.get(CONF_MAIN_CONTRACT_ID)]): multi_select(
+            vol.Required(CONF_SELECTED_CONTRACTS, default=[self.data.get(CONF_AVAILABLE_CONTRACTS)]): multi_select(
                 self.data.get(CONF_AVAILABLE_CONTRACTS)
             )
         }
