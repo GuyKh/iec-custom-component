@@ -177,7 +177,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return self._async_create_iec_entry(data)
 
         schema = {
-            vol.Required(CONF_SELECTED_CONTRACTS, default=[self.data.get(CONF_AVAILABLE_CONTRACTS)]): multi_select(
+            vol.Required(CONF_SELECTED_CONTRACTS, default=self.data.get(CONF_AVAILABLE_CONTRACTS)): multi_select(
                 self.data.get(CONF_AVAILABLE_CONTRACTS)
             )
         }
