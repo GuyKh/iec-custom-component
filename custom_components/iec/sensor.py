@@ -255,7 +255,13 @@ class IecSensor(CoordinatorEntity[IecApiCoordinator], SensorEntity):
     def native_value(self) -> StateType:
         """Return the state."""
         if self.coordinator.data is not None:
+            if self.contract_id == STATICS_DICT_NAME:
+                return self.entity_description.value_fn(
+                    self.coordinator.data.get(self.contract_id)
+                )
+
+            # Trim leading 0000 if needed and align with coordinator keys
             return self.entity_description.value_fn(
-                self.coordinator.data.get(self.contract_id)
+                self.coordinator.data.get(str(int(self.contract_id)))
             )
         return None

@@ -120,12 +120,12 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 data[CONF_BP_NUMBER] = customer.bp_number
 
                 contracts = await client.get_contracts(customer.bp_number)
-                contract_ids = [contract.contract_id for contract in contracts if contract.status == 1]
+                contract_ids = [int(contract.contract_id) for contract in contracts if contract.status == 1]
                 if len(contract_ids) == 1:
                     data[CONF_SELECTED_CONTRACTS] = [contract_ids[0]]
                     return self._async_create_iec_entry(data)
                 else:
-                    data[CONF_AVAILABLE_CONTRACTS] = [cid.lstrip('0') for cid in contract_ids]
+                    data[CONF_AVAILABLE_CONTRACTS] = contract_ids
                     self.data = data
                     return await self.async_step_select_contracts()
 

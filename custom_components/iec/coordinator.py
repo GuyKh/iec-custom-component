@@ -36,7 +36,7 @@ TIMEZONE = pytz.timezone("Asia/Jerusalem")
 
 
 async def _verify_daily_readings_exist(daily_readings: list[RemoteReading], desired_date: datetime, device: Device,
-                                       contract_id: str, api: IecClient,
+                                       contract_id: int, api: IecClient,
                                        prefetched_reading: RemoteReadingResponse | None = None):
     desired_date = desired_date.replace(hour=0, minute=0, second=0, microsecond=0)
     daily_reading = next(filter(lambda x: find_reading_by_date(x, desired_date), daily_readings), None)
@@ -80,7 +80,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         )
         self._config_entry = config_entry
         self._bp_number = config_entry.data.get(CONF_BP_NUMBER)
-        self._contracts = config_entry.data.get(CONF_SELECTED_CONTRACTS)
+        self._contract_ids = config_entry.data.get(CONF_SELECTED_CONTRACTS)
         self._entry_data = config_entry.data
         self._today_readings = {}
         self.api = IecClient(
@@ -127,10 +127,11 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             self._bp_number = customer.bp_number
 
         all_contracts: list[Contract] = await self.api.get_contracts(self._bp_number)
-        if not self._contracts:
-            self._contracts = [contract.contract_id for contract in all_contracts if contract.status == 1]
+        if not self._contract_ids:
+            self._contract_ids = [int(contract.contract_id) for contract in all_contracts if contract.status == 1]
 
-        contracts: dict[str, Contract] = {c.contract_id: c for c in all_contracts}
+        contracts: dict[int, Contract] = {int(c.contract_id): c for c in all_contracts if c.status == 1
+                                          and int(c.contract_id) in self._contract_ids}
 
         tariff = await self.api.get_kwh_tariff() / 100
         data = {STATICS_DICT_NAME: {
@@ -138,9 +139,12 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             STATIC_BP_NUMBER: self._bp_number
         }}
 
-        for contract_id in self._contracts:
+        _LOGGER.debug(f"All Contract Ids: {list(contracts.keys())}")
+
+        for contract_id in self._contract_ids:
             # Because IEC API provides historical usage/cost with a delay of a couple of days
             # we need to insert data into statistics.
+            _LOGGER.debug(f"Processing {contract_id}")
             await self._insert_statistics(contract_id, contracts.get(contract_id).smart_meter)
             billing_invoices = await self.api.get_billing_invoices(self._bp_number, contract_id)
             billing_invoices.invoices.sort(key=lambda inv: inv.full_date, reverse=True)
@@ -148,7 +152,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
             future_consumption: FutureConsumptionInfo | None = None
             daily_readings: list[RemoteReading] | None = None
-            today_reading: RemoteReadingResponse | None = None
+
             if contracts.get(contract_id).smart_meter:
                 # For some reason, there are differences between sending 2024-03-01 and sending 2024-03-07 (Today)
                 # So instead of sending the 1st day of the month, just sending today date
@@ -219,25 +223,27 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                             else:
                                 _LOGGER.debug("Failed fetching FutureConsumption, data in IEC API is corrupted")
 
-                data[contract_id] = {CONTRACT_DICT_NAME: contracts.get(contract_id),
-                                     INVOICE_DICT_NAME: last_invoice,
-                                     FUTURE_CONSUMPTIONS_DICT_NAME: future_consumption,
-                                     DAILY_READINGS_DICT_NAME: daily_readings,
-                                     STATICS_DICT_NAME: {STATIC_KWH_TARIFF: tariff} # workaround
-                                     }
+            data[str(contract_id)] = {CONTRACT_DICT_NAME: contracts.get(contract_id),
+                                      INVOICE_DICT_NAME: last_invoice,
+                                      FUTURE_CONSUMPTIONS_DICT_NAME: future_consumption,
+                                      DAILY_READINGS_DICT_NAME: daily_readings,
+                                      STATICS_DICT_NAME: {STATIC_KWH_TARIFF: tariff}  # workaround
+                                      }
 
-            # Clean today reading for next reading cycle
-            self._today_readings = {}
+        # Clean today reading for next reading cycle
+        self._today_readings = {}
+
+        _LOGGER.debug(f"Data Keys: {list(data.keys())}")
         return data
 
-    async def _insert_statistics(self, contract_id: str, is_smart_meter: bool) -> None:
+    async def _insert_statistics(self, contract_id: int, is_smart_meter: bool) -> None:
         if not is_smart_meter:
             _LOGGER.info(f"IEC Contract {contract_id} doesn't contain Smart Meters, not adding statistics")
             # Support only smart meters at the moment
             return
 
         _LOGGER.debug(f"Updating statistics for IEC Contract {contract_id}")
-        devices = await self.api.get_devices(contract_id)
+        devices = await self.api.get_devices(str(contract_id))
         month_ago_time = (datetime.now() - timedelta(weeks=4))
 
         kwh_price = await self.api.get_kwh_tariff() / 100
@@ -258,7 +264,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 readings = await self.api.get_remote_reading(device.device_number, int(device.device_code),
                                                              month_ago_time,
                                                              month_ago_time, ReadingResolution.DAILY,
-                                                             contract_id)
+                                                             str(contract_id))
             else:
                 last_stat_time = last_stat[consumption_statistic_id][0]["start"]
                 # API returns daily data, so need to increase the start date by 4 hrs to get the next day
@@ -277,7 +283,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 _LOGGER.debug(f"Fetching consumption from {from_date.strftime('%Y-%m-%d %H:%M:%S')}")
                 readings = await self.api.get_remote_reading(device.device_number, int(device.device_code),
                                                              from_date, from_date,
-                                                             ReadingResolution.DAILY, contract_id)
+                                                             ReadingResolution.DAILY, str(contract_id))
                 if from_date.date() == today.date():
                     self._today_readings[contract_id] = readings
 
