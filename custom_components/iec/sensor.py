@@ -23,7 +23,7 @@ from iec_api.models.remote_reading import RemoteReading
 
 from .commons import find_reading_by_date
 from .const import DOMAIN, ILS, STATICS_DICT_NAME, STATIC_KWH_TARIFF, FUTURE_CONSUMPTIONS_DICT_NAME, INVOICE_DICT_NAME, \
-    ILS_PER_KWH, DAILY_READINGS_DICT_NAME, EMPTY_REMOTE_READING, CONTRACT_DICT_NAME
+    ILS_PER_KWH, DAILY_READINGS_DICT_NAME, EMPTY_REMOTE_READING, CONTRACT_DICT_NAME, EMPTY_INVOICE
 from .coordinator import IecApiCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -127,7 +127,8 @@ ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         state_class=SensorStateClass.TOTAL,
         suggested_display_precision=0,
-        value_fn=lambda data: data[INVOICE_DICT_NAME].consumption,
+        value_fn=lambda data: data[INVOICE_DICT_NAME].consumption if (
+                data[INVOICE_DICT_NAME] != EMPTY_INVOICE) else None,
     ),
     IecEntityDescription(
         key="iec_last_cost",
@@ -135,7 +136,8 @@ ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         native_unit_of_measurement=ILS,
         state_class=SensorStateClass.TOTAL,
         suggested_display_precision=2,
-        value_fn=lambda data: data[INVOICE_DICT_NAME].amount_origin,
+        value_fn=lambda data: data[INVOICE_DICT_NAME].amount_origin if (
+                data[INVOICE_DICT_NAME] != EMPTY_INVOICE) else None,
     ),
     IecEntityDescription(
         key="iec_last_number_of_days",
@@ -143,17 +145,20 @@ ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfTime.DAYS,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
-        value_fn=lambda data: data[INVOICE_DICT_NAME].days_period,
+        value_fn=lambda data: data[INVOICE_DICT_NAME].days_period if (
+                data[INVOICE_DICT_NAME] != EMPTY_INVOICE) else None,
     ),
     IecEntityDescription(
         key="iec_bill_date",
         device_class=SensorDeviceClass.DATE,
-        value_fn=lambda data: data[INVOICE_DICT_NAME].to_date.date(),
+        value_fn=lambda data: data[INVOICE_DICT_NAME].to_date.date() if (
+                data[INVOICE_DICT_NAME] != EMPTY_INVOICE) else None,
     ),
     IecEntityDescription(
         key="iec_bill_last_payment_date",
         device_class=SensorDeviceClass.DATE,
-        value_fn=lambda data: datetime.strptime(data[INVOICE_DICT_NAME].last_date, "%d/%M/%Y").date(),
+        value_fn=lambda data: data[INVOICE_DICT_NAME].last_date if (
+                data[INVOICE_DICT_NAME] != EMPTY_INVOICE) else None,
     ),
     IecEntityDescription(
         key="iec_last_meter_reading",
@@ -161,7 +166,8 @@ ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
         suggested_display_precision=0,
-        value_fn=lambda data: data[INVOICE_DICT_NAME].meter_readings[0].reading,
+        value_fn=lambda data: data[INVOICE_DICT_NAME].meter_readings[0].reading if (
+                data[INVOICE_DICT_NAME] != EMPTY_INVOICE) else None,
     )
 )
 
