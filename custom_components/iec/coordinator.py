@@ -29,7 +29,7 @@ from iec_api.models.remote_reading import ReadingResolution, RemoteReading, Futu
 from .commons import find_reading_by_date
 from .const import DOMAIN, CONF_USER_ID, STATICS_DICT_NAME, STATIC_KWH_TARIFF, INVOICE_DICT_NAME, \
     FUTURE_CONSUMPTIONS_DICT_NAME, DAILY_READINGS_DICT_NAME, STATIC_BP_NUMBER, ILS, CONF_BP_NUMBER, \
-    CONF_SELECTED_CONTRACTS, CONTRACT_DICT_NAME
+    CONF_SELECTED_CONTRACTS, CONTRACT_DICT_NAME, EMPTY_INVOICE
 
 _LOGGER = logging.getLogger(__name__)
 TIMEZONE = pytz.timezone("Asia/Jerusalem")
@@ -46,7 +46,7 @@ async def _verify_daily_readings_exist(daily_readings: list[RemoteReading], desi
         if not hourly_readings:
             hourly_readings = await api.get_remote_reading(device.device_number, int(device.device_code),
                                                            desired_date, desired_date,
-                                                           ReadingResolution.DAILY, contract_id)
+                                                           ReadingResolution.DAILY, str(contract_id))
         daily_sum = 0
         if hourly_readings is None or hourly_readings.data is None:
             _LOGGER.info(f'No readings found for date: {desired_date.strftime("%Y-%m-%d")}')
@@ -147,8 +147,12 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             _LOGGER.debug(f"Processing {contract_id}")
             await self._insert_statistics(contract_id, contracts.get(contract_id).smart_meter)
             billing_invoices = await self.api.get_billing_invoices(self._bp_number, contract_id)
-            billing_invoices.invoices.sort(key=lambda inv: inv.full_date, reverse=True)
-            last_invoice = billing_invoices.invoices[0]
+
+            if billing_invoices.invoices and len(billing_invoices.invoices) > 0:
+                billing_invoices.invoices.sort(key=lambda inv: inv.full_date, reverse=True)
+                last_invoice = billing_invoices.invoices[0]
+            else:
+                last_invoice = EMPTY_INVOICE
 
             future_consumption: FutureConsumptionInfo | None = None
             daily_readings: list[RemoteReading] | None = None
