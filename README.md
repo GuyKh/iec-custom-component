@@ -45,6 +45,7 @@ logger:
   logs:
     ...
     custom_components.iec: debug
+    iec_api: debug
 ```
 
 <!---->
