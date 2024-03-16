@@ -84,6 +84,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         self._entry_data = config_entry.data
         self._today_readings = {}
         self._devices_by_contract_id = {}
+        self._kwh_tariff: float | None = None
         self.api = IecClient(
             self._entry_data[CONF_USER_ID],
             session=aiohttp_client.async_get_clientsession(hass, family=socket.AF_INET)
@@ -134,7 +135,10 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         contracts: dict[int, Contract] = {int(c.contract_id): c for c in all_contracts if c.status == 1
                                           and int(c.contract_id) in self._contract_ids}
 
-        tariff = await self.api.get_kwh_tariff() / 100
+        if not self._kwh_tariff:
+            self._kwh_tariff = await self.api.get_kwh_tariff() / 100
+
+        tariff = self._kwh_tariff
         data = {STATICS_DICT_NAME: {
             STATIC_KWH_TARIFF: tariff,
             STATIC_BP_NUMBER: self._bp_number
@@ -245,6 +249,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         # Clean up for next cycle
         self._today_readings = {}
         self._devices_by_contract_id = {}
+        self._kwh_tariff = None
 
         _LOGGER.debug(f"Data Keys: {list(data.keys())}")
         return data
@@ -263,7 +268,10 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             self._devices_by_contract_id[contract_id] = devices
         month_ago_time = (datetime.now() - timedelta(weeks=4))
 
-        kwh_price = await self.api.get_kwh_tariff() / 100
+        if not self._kwh_tariff:
+            self._kwh_tariff = await self.api.get_kwh_tariff() / 100
+
+        kwh_price = self._kwh_tariff
 
         for device in devices:
             id_prefix = f"iec_meter_{device.device_number}"
