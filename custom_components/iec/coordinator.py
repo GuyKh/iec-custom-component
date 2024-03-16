@@ -29,7 +29,7 @@ from iec_api.models.remote_reading import ReadingResolution, RemoteReading, Futu
 from .commons import find_reading_by_date
 from .const import DOMAIN, CONF_USER_ID, STATICS_DICT_NAME, STATIC_KWH_TARIFF, INVOICE_DICT_NAME, \
     FUTURE_CONSUMPTIONS_DICT_NAME, DAILY_READINGS_DICT_NAME, STATIC_BP_NUMBER, ILS, CONF_BP_NUMBER, \
-    CONF_SELECTED_CONTRACTS, CONTRACT_DICT_NAME, EMPTY_INVOICE
+    CONF_SELECTED_CONTRACTS, CONTRACT_DICT_NAME, EMPTY_INVOICE, ELECTRICITY_INVOICE_ID
 
 _LOGGER = logging.getLogger(__name__)
 TIMEZONE = pytz.timezone("Asia/Jerusalem")
@@ -149,6 +149,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             billing_invoices = await self.api.get_billing_invoices(self._bp_number, contract_id)
 
             if billing_invoices.invoices and len(billing_invoices.invoices) > 0:
+                billing_invoices.invoices = list(
+                    filter(lambda inv: inv.document_id == ELECTRICITY_INVOICE_ID, billing_invoices.invoices))
                 billing_invoices.invoices.sort(key=lambda inv: inv.full_date, reverse=True)
                 last_invoice = billing_invoices.invoices[0]
             else:
