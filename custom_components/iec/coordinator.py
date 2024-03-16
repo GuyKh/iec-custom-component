@@ -83,6 +83,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         self._contract_ids = config_entry.data.get(CONF_SELECTED_CONTRACTS)
         self._entry_data = config_entry.data
         self._today_readings = {}
+        self._devices_by_contract_id = {}
         self.api = IecClient(
             self._entry_data[CONF_USER_ID],
             session=aiohttp_client.async_get_clientsession(hass, family=socket.AF_INET)
@@ -163,7 +164,14 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
                 monthly_report_req_date: datetime = TIMEZONE.localize(datetime.today().replace(hour=1, minute=0,
                                                                                                second=0, microsecond=0))
-                devices = await self.api.get_devices(contract_id)
+
+                # reduce number of calls
+                if contract_id in self._devices_by_contract_id:
+                    devices = self._devices_by_contract_id[contract_id]
+                else:
+                    devices = await self.api.get_devices(str(contract_id))
+                    self._devices_by_contract_id[contract_id] = devices
+
                 for device in devices:
                     remote_reading = await self.api.get_remote_reading(device.device_number, int(device.device_code),
                                                                        monthly_report_req_date,
@@ -234,8 +242,9 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                                       STATICS_DICT_NAME: {STATIC_KWH_TARIFF: tariff}  # workaround
                                       }
 
-        # Clean today reading for next reading cycle
+        # Clean up for next cycle
         self._today_readings = {}
+        self._devices_by_contract_id = {}
 
         _LOGGER.debug(f"Data Keys: {list(data.keys())}")
         return data
@@ -247,7 +256,11 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             return
 
         _LOGGER.debug(f"Updating statistics for IEC Contract {contract_id}")
-        devices = await self.api.get_devices(str(contract_id))
+        if contract_id in self._devices_by_contract_id:
+            devices = self._devices_by_contract_id[contract_id]
+        else:
+            devices = await self.api.get_devices(str(contract_id))
+            self._devices_by_contract_id[contract_id] = devices
         month_ago_time = (datetime.now() - timedelta(weeks=4))
 
         kwh_price = await self.api.get_kwh_tariff() / 100
