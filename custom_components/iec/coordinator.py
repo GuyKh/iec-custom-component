@@ -209,7 +209,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
                     today_reading = self._today_readings.get(contract_id)
 
-                    if not self._today_readings.get(contract_id):
+                    if not today_reading:
                         today_reading = await self.api.get_remote_reading(device.device_number, int(device.device_code),
                                                                           datetime.today(), datetime.today(),
                                                                           ReadingResolution.DAILY, contract_id)
@@ -266,7 +266,6 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         else:
             devices = await self.api.get_devices(str(contract_id))
             self._devices_by_contract_id[contract_id] = devices
-        month_ago_time = (datetime.now() - timedelta(weeks=4))
 
         if not self._kwh_tariff:
             self._kwh_tariff = await self.api.get_kwh_tariff() / 100
@@ -283,6 +282,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             )
 
             if not last_stat:
+                month_ago_time = (datetime.now() - timedelta(weeks=4))
+
                 _LOGGER.debug("Updating statistic for the first time")
                 _LOGGER.debug(f"Fetching consumption from {month_ago_time.strftime('%Y-%m-%d %H:%M:%S')}")
                 last_stat_time = 0
@@ -376,9 +377,10 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
             consumption_statistics = []
             cost_statistics = []
-            for key, value in readings_by_hour.items():
+            for key, value in sorted(readings_by_hour.items()):
                 consumption_sum += value
                 cost_sum += value * kwh_price
+
                 consumption_statistics.append(
                     StatisticData(
                         start=key,
