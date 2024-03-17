@@ -140,6 +140,15 @@ ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
                 data[INVOICE_DICT_NAME] != EMPTY_INVOICE) else None,
     ),
     IecEntityDescription(
+        key="iec_last_bill_remain_to_pay",
+        device_class=SensorDeviceClass.MONETARY,
+        native_unit_of_measurement=ILS,
+        state_class=SensorStateClass.TOTAL,
+        suggested_display_precision=2,
+        value_fn=lambda data: data[INVOICE_DICT_NAME].amount_to_pay if (
+                data[INVOICE_DICT_NAME] != EMPTY_INVOICE) else None,
+    ),
+    IecEntityDescription(
         key="iec_last_number_of_days",
         device_class=SensorDeviceClass.DURATION,
         native_unit_of_measurement=UnitOfTime.DAYS,

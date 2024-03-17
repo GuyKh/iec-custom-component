@@ -25,6 +25,9 @@
       "iec_last_cost": {
         "name": "Last IEC bill electric cost {multi_contract}"
       },
+      "iec_last_bill_remain_to_pay": {
+        "name": "Last IEC bill amount to pay {multi_contract}"
+      },
       "iec_last_number_of_days": {
         "name": "Last IEC bill length in days {multi_contract}"
       },
