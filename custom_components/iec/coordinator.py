@@ -101,6 +101,19 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         # _async_update_data not periodically getting called which is needed for _insert_statistics.
         self.async_add_listener(_dummy_listener)
 
+    async def _get_devices_by_contract_id(self, contract_id) -> list[Device]:
+        devices = self._devices_by_contract_id[contract_id]
+        if not devices:
+            devices = await self.api.get_devices(str(contract_id))
+            self._devices_by_contract_id[contract_id] = devices
+
+        return devices
+
+    async def _get_kwh_tariff(self) -> float:
+        if not self._kwh_tariff:
+            self._kwh_tariff = await self.api.get_kwh_tariff() / 100
+        return self._kwh_tariff
+
     async def _async_update_data(
             self,
     ) -> dict[str, dict[str, Any]]:
@@ -135,10 +148,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         contracts: dict[int, Contract] = {int(c.contract_id): c for c in all_contracts if c.status == 1
                                           and int(c.contract_id) in self._contract_ids}
 
-        if not self._kwh_tariff:
-            self._kwh_tariff = await self.api.get_kwh_tariff() / 100
+        tariff = await self._get_kwh_tariff()
 
-        tariff = self._kwh_tariff
         data = {STATICS_DICT_NAME: {
             STATIC_KWH_TARIFF: tariff,
             STATIC_BP_NUMBER: self._bp_number
@@ -169,12 +180,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 monthly_report_req_date: datetime = TIMEZONE.localize(datetime.today().replace(hour=1, minute=0,
                                                                                                second=0, microsecond=0))
 
-                # reduce number of calls
-                if contract_id in self._devices_by_contract_id:
-                    devices = self._devices_by_contract_id[contract_id]
-                else:
-                    devices = await self.api.get_devices(str(contract_id))
-                    self._devices_by_contract_id[contract_id] = devices
+                devices = await self._get_devices_by_contract_id(contract_id)
 
                 for device in devices:
                     remote_reading = await self.api.get_remote_reading(device.device_number, int(device.device_code),
@@ -261,16 +267,9 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             return
 
         _LOGGER.debug(f"Updating statistics for IEC Contract {contract_id}")
-        if contract_id in self._devices_by_contract_id:
-            devices = self._devices_by_contract_id[contract_id]
-        else:
-            devices = await self.api.get_devices(str(contract_id))
-            self._devices_by_contract_id[contract_id] = devices
+        devices = await self._get_devices_by_contract_id(contract_id)
 
-        if not self._kwh_tariff:
-            self._kwh_tariff = await self.api.get_kwh_tariff() / 100
-
-        kwh_price = self._kwh_tariff
+        kwh_price = await self._get_kwh_tariff()
 
         for device in devices:
             id_prefix = f"iec_meter_{device.device_number}"
