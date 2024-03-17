@@ -1,5 +1,10 @@
 {
   "entity": {
+    "binary_sensor": {
+      "last_invoice_paid": {
+        "name": "Is last invoice paid {multi_contract}"
+      }
+    },
     "sensor": {
       "elec_forecasted_usage": {
         "name": "Next bill electric forecasted usage {multi_contract}"
