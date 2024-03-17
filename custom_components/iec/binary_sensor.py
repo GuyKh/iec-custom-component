@@ -33,7 +33,8 @@ class IecBinarySensorEntityDescription(BinarySensorEntityDescription, IecBinaryE
 BINARY_SENSORS: tuple[IecBinarySensorEntityDescription, ...] = (
     IecBinarySensorEntityDescription(
         key="last_invoice_paid",
-        value_fn=lambda data: (data[INVOICE_DICT_NAME].amount_to_pay > 0) if (
+        translation_key="last_invoice_paid",
+        value_fn=lambda data: (data[INVOICE_DICT_NAME].amount_to_pay == 0) if (
                 data[INVOICE_DICT_NAME] != EMPTY_INVOICE) else None,
     ),
 )
@@ -57,7 +58,7 @@ async def async_setup_entry(
         for description in BINARY_SENSORS:
             entities.append(
                 IecBinarySensorEntity(coordinator=coordinator,
-                                      description=description,
+                                      entity_description=description,
                                       contract_id=contract_key,
                                       is_multi_contract=is_multi_contract)
             )
@@ -67,6 +68,7 @@ async def async_setup_entry(
 
 class IecBinarySensorEntity(CoordinatorEntity[IecApiCoordinator], BinarySensorEntity):
     """Defines an IEC binary sensor."""
+    _attr_has_entity_name = True
 
     coordinator: IecApiCoordinator
     entity_description: IecBinarySensorEntityDescription
@@ -75,17 +77,17 @@ class IecBinarySensorEntity(CoordinatorEntity[IecApiCoordinator], BinarySensorEn
     def __init__(
             self,
             coordinator: IecApiCoordinator,
-            description: IecBinarySensorEntityDescription,
+            entity_description: IecBinarySensorEntityDescription,
+
             contract_id: str,
             is_multi_contract: bool
     ):
         """Initialize the sensor."""
         super().__init__(coordinator)
-        self.entity_description = description
+        self.entity_description = entity_description
         self.contract_id = contract_id
-        self._attr_unique_id = f"{str(contract_id)}_{description.key}"
-        self._attr_translation_key = f"{description.key}"
-        self._attr_translation_placeholders = {"multi_contract": f"of {contract_id}"}
+        self._attr_unique_id = f"{str(contract_id)}_{entity_description.key}"
+
 
         attributes = {
             "contract_id": contract_id
