@@ -77,7 +77,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         self.async_add_listener(_dummy_listener)
 
     async def _get_devices_by_contract_id(self, contract_id) -> list[Device]:
-        devices = self._devices_by_contract_id[contract_id]
+        devices = self._devices_by_contract_id.get(contract_id)
         if not devices:
             devices = await self.api.get_devices(str(contract_id))
             self._devices_by_contract_id[contract_id] = devices
@@ -92,7 +92,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
     async def _get_readings(self, contract_id: int, device_id: str | int, device_code: str | int, date: datetime,
                             resolution: ReadingResolution):
         key = (contract_id, int(device_id), int(device_code), date, resolution)
-        reading = self._readings[key]
+        reading = self._readings.get(key)
         if not reading:
             reading = await self.api.get_remote_reading(device_id, int(device_code),
                                                         date,
