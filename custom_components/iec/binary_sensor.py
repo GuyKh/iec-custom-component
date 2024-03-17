@@ -68,6 +68,7 @@ async def async_setup_entry(
 
 class IecBinarySensorEntity(CoordinatorEntity[IecApiCoordinator], BinarySensorEntity):
     """Defines an IEC binary sensor."""
+
     _attr_has_entity_name = True
 
     coordinator: IecApiCoordinator
