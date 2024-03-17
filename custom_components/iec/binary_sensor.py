@@ -51,6 +51,9 @@ async def async_setup_entry(
 
     entities: list[BinarySensorEntity] = []
     for contract_key in coordinator.data:
+        if contract_key == STATICS_DICT_NAME:
+            continue
+
         for description in BINARY_SENSORS:
             entities.append(
                 IecBinarySensorEntity(coordinator=coordinator,
