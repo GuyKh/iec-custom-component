@@ -104,7 +104,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
     async def _verify_daily_readings_exist(self, daily_readings: list[RemoteReading], desired_date: datetime,
                                            device: Device,
-                                           contract_id: int, api: IecClient,
+                                           contract_id: int,
                                            prefetched_reading: RemoteReadingResponse | None = None):
         desired_date = desired_date.replace(hour=0, minute=0, second=0, microsecond=0)
         daily_reading = next(filter(lambda x: find_reading_by_date(x, desired_date), daily_readings), None)
@@ -224,7 +224,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                             daily_readings.sort(key=lambda x: x.date)
 
                     await self._verify_daily_readings_exist(daily_readings, datetime.today() - timedelta(days=1),
-                                                            device, contract_id, self.api)
+                                                            device, contract_id)
 
                     today_reading = self._today_readings.get(contract_id)
 
@@ -235,7 +235,6 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                         self._today_readings[contract_id] = today_reading
 
                     await self._verify_daily_readings_exist(daily_readings, datetime.today(), device, contract_id,
-                                                            self.api,
                                                             today_reading)
 
                     # fallbacks for future consumption since IEC api is broken :/
