@@ -1,5 +1,10 @@
 {
   "entity": {
+    "binary_sensor": {
+      "last_invoice_paid": {
+        "name": "האם שולמה חשבונית אחרונה {multi_contract}"
+      }
+    },
     "sensor": {
       "elec_forecasted_usage": {
         "name": "סך צריכת החשמל בחשבונית הבאה {multi_contract}"
@@ -24,6 +29,9 @@
       },
       "iec_last_cost": {
         "name": "סכום החיוב מהחשבונית האחרונה {multi_contract}"
+      },
+      "iec_last_bill_remain_to_pay": {
+        "name": "סכום החיוב הנותר לתשלום מהחשבונית האחרונה {multi_contract}"
       },
       "iec_last_number_of_days": {
         "name": "משך הזמן בחשבונית האחרונה {multi_contract}"
