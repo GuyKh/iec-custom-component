@@ -2,7 +2,7 @@
   "entity": {
     "binary_sensor": {
       "last_invoice_paid": {
-        "name": "Is last invoice {multi_contract} paid"
+        "name": "Is last IEC invoice {multi_contract} paid"
       }
     },
     "sensor": {
