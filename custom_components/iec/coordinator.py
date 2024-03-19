@@ -79,27 +79,37 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
     async def _get_devices_by_contract_id(self, contract_id) -> list[Device]:
         devices = self._devices_by_contract_id.get(contract_id)
         if not devices:
-            devices = await self.api.get_devices(str(contract_id))
-            self._devices_by_contract_id[contract_id] = devices
-
+            try:
+                devices = await self.api.get_devices(str(contract_id))
+                self._devices_by_contract_id[contract_id] = devices
+            except IECError as e:
+                _LOGGER.exception(f"Failed fetching devices by contract {contract_id}", e)
         return devices
 
     async def _get_kwh_tariff(self) -> float:
         if not self._kwh_tariff:
-            self._kwh_tariff = await self.api.get_kwh_tariff() / 100
-        return self._kwh_tariff
+            try:
+                self._kwh_tariff = await self.api.get_kwh_tariff() / 100
+            except IECError as e:
+                _LOGGER.exception(f"Failed fetching kWh Tariff", e)
+        return self._kwh_tariff or 0.0
 
     async def _get_readings(self, contract_id: int, device_id: str | int, device_code: str | int, date: datetime,
                             resolution: ReadingResolution):
         key = (contract_id, int(device_id), int(device_code), date, resolution)
         reading = self._readings.get(key)
         if not reading:
-            reading = await self.api.get_remote_reading(device_id, int(device_code),
-                                                        date,
-                                                        date,
-                                                        resolution,
-                                                        str(contract_id))
-            self._readings[key] = reading
+            try:
+                reading = await self.api.get_remote_reading(device_id, int(device_code),
+                                                            date,
+                                                            date,
+                                                            resolution,
+                                                            str(contract_id))
+                self._readings[key] = reading
+            except IECError as e:
+                _LOGGER.exception(f"Failed fetching reading for Contract: {contract_id},"
+                                  f"date: {date.strftime('%d-%m-%Y')}, "
+                                  f"resolution: {resolution}", e)
         return reading
 
     async def _verify_daily_readings_exist(self, daily_readings: list[RemoteReading], desired_date: datetime,
@@ -287,7 +297,6 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
         _LOGGER.debug(f"Updating statistics for IEC Contract {contract_id}")
         devices = await self._get_devices_by_contract_id(contract_id)
-
         kwh_price = await self._get_kwh_tariff()
 
         for device in devices:
