@@ -178,9 +178,14 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             # we need to insert data into statistics.
             _LOGGER.debug(f"Processing {contract_id}")
             await self._insert_statistics(contract_id, contracts.get(contract_id).smart_meter)
-            billing_invoices = await self.api.get_billing_invoices(self._bp_number, contract_id)
 
-            if billing_invoices.invoices and len(billing_invoices.invoices) > 0:
+            try:
+                billing_invoices = await self.api.get_billing_invoices(self._bp_number, contract_id)
+            except IECError as e:
+                _LOGGER.exception("Failed fetching invoices", e)
+                billing_invoices = None
+
+            if billing_invoices and billing_invoices.invoices and len(billing_invoices.invoices) > 0:
                 billing_invoices.invoices = list(
                     filter(lambda inv: inv.document_id == ELECTRIC_INVOICE_DOC_ID, billing_invoices.invoices))
                 billing_invoices.invoices.sort(key=lambda inv: inv.full_date, reverse=True)
