@@ -91,7 +91,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             try:
                 self._kwh_tariff = await self.api.get_kwh_tariff() / 100
             except IECError as e:
-                _LOGGER.exception(f"Failed fetching kWh Tariff", e)
+                _LOGGER.exception("Failed fetching kWh Tariff", e)
         return self._kwh_tariff or 0.0
 
     async def _get_readings(self, contract_id: int, device_id: str | int, device_code: str | int, date: datetime,
