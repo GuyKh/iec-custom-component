@@ -40,7 +40,7 @@
         "name": "תאריך חיוב לחשבונית האחרונה {multi_contract}"
       },
       "iec_bill_last_payment_date": {
-        "name": "תאריך אחרון לתשלון של החשבונית האחרונה {multi_contract}"
+        "name": "תאריך אחרון לתשלום החשבונית האחרונה {multi_contract}"
       },
       "iec_last_meter_reading": {
         "name": "קריאת מונה מהחשבונית האחרונה {multi_contract}"
