@@ -72,7 +72,8 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         # state_class=SensorStateClass.TOTAL,
         suggested_display_precision=3,
-        value_fn=lambda data: data[FUTURE_CONSUMPTIONS_DICT_NAME].future_consumption or 0,
+        value_fn=lambda data: (data[FUTURE_CONSUMPTIONS_DICT_NAME].future_consumption or 0) if (
+            data[FUTURE_CONSUMPTIONS_DICT_NAME]) else None
     ),
     IecEntityDescription(
         key="elec_forecasted_cost",
@@ -81,8 +82,8 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         # state_class=SensorStateClass.TOTAL,
         suggested_display_precision=2,
         # The API doesn't provide future *cost* so we can try to estimate it by the previous consumption
-        value_fn=lambda data: (data[FUTURE_CONSUMPTIONS_DICT_NAME].future_consumption or 0) * data[STATICS_DICT_NAME][
-            STATIC_KWH_TARIFF]
+        value_fn=lambda data: ((data[FUTURE_CONSUMPTIONS_DICT_NAME].future_consumption or 0) * data[STATICS_DICT_NAME][
+            STATIC_KWH_TARIFF]) if (data[FUTURE_CONSUMPTIONS_DICT_NAME]) else None
     ),
     IecEntityDescription(
         key="elec_today_consumption",
@@ -90,7 +91,8 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         # state_class=SensorStateClass.TOTAL,
         suggested_display_precision=3,
-        value_fn=lambda data: _get_reading_by_date(data[DAILY_READINGS_DICT_NAME], datetime.now()).value
+        value_fn=lambda data: _get_reading_by_date(data[DAILY_READINGS_DICT_NAME], datetime.now()).value if (
+            data[DAILY_READINGS_DICT_NAME]) else None
     ),
     IecEntityDescription(
         key="elec_yesterday_consumption",
@@ -98,8 +100,9 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         # state_class=SensorStateClass.TOTAL,
         suggested_display_precision=3,
-        value_fn=lambda data: _get_reading_by_date(data[DAILY_READINGS_DICT_NAME],
-                                                   datetime.now() - timedelta(days=1)).value,
+        value_fn=lambda data: (_get_reading_by_date(data[DAILY_READINGS_DICT_NAME],
+                                                    datetime.now() - timedelta(days=1)).value) if (
+            data[DAILY_READINGS_DICT_NAME]) else None,
     ),
     IecEntityDescription(
         key="elec_this_month_consumption",
@@ -107,8 +110,9 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         # state_class=SensorStateClass.TOTAL,
         suggested_display_precision=3,
-        value_fn=lambda data: sum([reading.value for reading in data[DAILY_READINGS_DICT_NAME]
-                                   if reading.date.month == datetime.now().month]),
+        value_fn=lambda data: (sum([reading.value for reading in data[DAILY_READINGS_DICT_NAME]
+                                   if reading.date.month == datetime.now().month])) if (
+                data[DAILY_READINGS_DICT_NAME]) else None,
     ),
     IecEntityDescription(
         key="elec_latest_meter_reading",
@@ -116,7 +120,8 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         state_class=SensorStateClass.TOTAL_INCREASING,
         suggested_display_precision=3,
-        value_fn=lambda data: data[FUTURE_CONSUMPTIONS_DICT_NAME].total_import or 0
+        value_fn=lambda data: (data[FUTURE_CONSUMPTIONS_DICT_NAME].total_import or 0) if (
+                data[FUTURE_CONSUMPTIONS_DICT_NAME]) else None
     ),
 )
 
