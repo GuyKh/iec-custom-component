@@ -207,7 +207,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             daily_readings: dict[str, list[RemoteReading] | None] | None = {}
 
             is_smart_meter = contracts.get(contract_id).smart_meter
-            attributes_to_add = {CONTRACT_ID_ATTR_NAME: contract_id,
+            attributes_to_add = {CONTRACT_ID_ATTR_NAME: str(contract_id),
                                  IS_SMART_METER_ATTR_NAME: is_smart_meter,
                                  METER_ID_ATTR_NAME: None}
 
