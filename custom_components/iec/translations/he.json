@@ -1,7 +1,7 @@
 {
   "entity": {
     "binary_sensor": {
-      "last_invoice_paid": {
+      "last_iec_invoice_paid": {
         "name": "האם שולמה חשבונית אחרונה {multi_contract}"
       }
     },

@@ -29,7 +29,8 @@ from iec_api.models.remote_reading import ReadingResolution, RemoteReading, Futu
 from .commons import find_reading_by_date
 from .const import DOMAIN, CONF_USER_ID, STATICS_DICT_NAME, STATIC_KWH_TARIFF, INVOICE_DICT_NAME, \
     FUTURE_CONSUMPTIONS_DICT_NAME, DAILY_READINGS_DICT_NAME, STATIC_BP_NUMBER, ILS, CONF_BP_NUMBER, \
-    CONF_SELECTED_CONTRACTS, CONTRACT_DICT_NAME, EMPTY_INVOICE, ELECTRIC_INVOICE_DOC_ID
+    CONF_SELECTED_CONTRACTS, CONTRACT_DICT_NAME, EMPTY_INVOICE, ELECTRIC_INVOICE_DOC_ID, ATTRIBUTES_DICT_NAME, \
+    CONTRACT_ID_ATTR_NAME, IS_SMART_METER_ATTR_NAME, METER_ID_ATTR_NAME
 
 _LOGGER = logging.getLogger(__name__)
 TIMEZONE = pytz.timezone("Asia/Jerusalem")
@@ -186,7 +187,6 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         for contract_id in self._contract_ids:
             # Because IEC API provides historical usage/cost with a delay of a couple of days
             # we need to insert data into statistics.
-            _LOGGER.debug(f"Processing {contract_id}")
             await self._insert_statistics(contract_id, contracts.get(contract_id).smart_meter)
 
             try:
@@ -203,10 +203,15 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             else:
                 last_invoice = EMPTY_INVOICE
 
-            future_consumption: FutureConsumptionInfo | None = None
-            daily_readings: list[RemoteReading] | None = None
+            future_consumption: dict[str, FutureConsumptionInfo | None] | None = {}
+            daily_readings: dict[str, list[RemoteReading] | None] | None = {}
 
-            if contracts.get(contract_id).smart_meter:
+            is_smart_meter = contracts.get(contract_id).smart_meter
+            attributes_to_add = {CONTRACT_ID_ATTR_NAME: contract_id,
+                                 IS_SMART_METER_ATTR_NAME: is_smart_meter,
+                                 METER_ID_ATTR_NAME: None}
+
+            if is_smart_meter:
                 # For some reason, there are differences between sending 2024-03-01 and sending 2024-03-07 (Today)
                 # So instead of sending the 1st day of the month, just sending today date
 
@@ -216,12 +221,14 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 devices = await self._get_devices_by_contract_id(contract_id)
 
                 for device in devices:
+                    attributes_to_add[METER_ID_ATTR_NAME] = device.device_number
+
                     remote_reading = await self._get_readings(contract_id, device.device_number, device.device_code,
                                                               monthly_report_req_date,
                                                               ReadingResolution.MONTHLY)
                     if remote_reading:
-                        future_consumption = remote_reading.future_consumption_info
-                        daily_readings = remote_reading.data
+                        future_consumption[device.device_number] = remote_reading.future_consumption_info
+                        daily_readings[device.device_number] = remote_reading.data
 
                     weekly_future_consumption = None
                     if datetime.today().day == 1:
@@ -230,37 +237,40 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                         remote_reading = await self._get_readings(contract_id, device.device_number, device.device_code,
                                                                   yesterday,
                                                                   ReadingResolution.WEEKLY)
-                        if remote_reading:
-                            daily_readings += remote_reading.data
+                        if remote_reading[device.device_number]:
+                            daily_readings[device.device_number] += remote_reading.data
                             weekly_future_consumption = remote_reading.future_consumption_info
 
                             # Remove duplicates
-                            daily_readings = list(dict.fromkeys(daily_readings))
+                            daily_readings[device.device_number] = list(dict.fromkeys(daily_readings))
 
                             # Sort by Date
-                            daily_readings.sort(key=lambda x: x.date)
+                            daily_readings[device.device_number].sort(key=lambda x: x.date)
 
-                    await self._verify_daily_readings_exist(daily_readings, datetime.today() - timedelta(days=1),
-                                                            device, contract_id)
+                    await self._verify_daily_readings_exist(daily_readings[device.device_number],
+                                                            datetime.today() - timedelta(days=1), device, contract_id)
 
-                    today_reading = self._today_readings.get(contract_id)
+                    today_reading_key = str(contract_id) + "-" + device.device_number
+                    today_reading = self._today_readings.get(today_reading_key)
 
                     if not today_reading:
                         today_reading = await self._get_readings(contract_id, device.device_number, device.device_code,
                                                                  datetime.today(),
                                                                  ReadingResolution.DAILY)
-                        self._today_readings[contract_id] = today_reading
+                        self._today_readings[today_reading_key] = today_reading
 
-                    await self._verify_daily_readings_exist(daily_readings, datetime.today(), device, contract_id,
-                                                            today_reading)
+                    await self._verify_daily_readings_exist(daily_readings[device.device_number],
+                                                            datetime.today(), device, contract_id, today_reading)
 
                     # fallbacks for future consumption since IEC api is broken :/
-                    if not future_consumption.future_consumption:
+                    if not future_consumption[device.device_number].future_consumption:
                         if weekly_future_consumption and weekly_future_consumption.future_consumption:
-                            future_consumption = weekly_future_consumption
-                        elif (self._today_readings.get(contract_id)
-                              and self._today_readings.get(contract_id).future_consumption_info.future_consumption):
-                            future_consumption = self._today_readings.get(contract_id).future_consumption_info
+                            future_consumption[device.device_number] = weekly_future_consumption
+                        elif (self._today_readings.get(today_reading_key)
+                              and self._today_readings.get(today_reading_key)
+                                      .future_consumption_info.future_consumption):
+                            future_consumption[device.device_number] = (
+                                self._today_readings.get(today_reading_key).future_consumption_info)
                         else:
                             req_date = datetime.today() - timedelta(days=2)
                             two_days_ago_reading = await self._get_readings(contract_id, device.device_number,
@@ -269,7 +279,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                                                                             ReadingResolution.DAILY)
 
                             if two_days_ago_reading:
-                                future_consumption = two_days_ago_reading.future_consumption_info
+                                future_consumption[device.device_number] = two_days_ago_reading.future_consumption_info
                             else:
                                 _LOGGER.debug("Failed fetching FutureConsumption, data in IEC API is corrupted")
 
@@ -277,7 +287,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                                       INVOICE_DICT_NAME: last_invoice,
                                       FUTURE_CONSUMPTIONS_DICT_NAME: future_consumption,
                                       DAILY_READINGS_DICT_NAME: daily_readings,
-                                      STATICS_DICT_NAME: {STATIC_KWH_TARIFF: tariff}  # workaround
+                                      STATICS_DICT_NAME: {STATIC_KWH_TARIFF: tariff},  # workaround,
+                                      ATTRIBUTES_DICT_NAME: attributes_to_add
                                       }
 
         # Clean up for next cycle
@@ -286,7 +297,6 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         self._kwh_tariff = None
         self._readings = {}
 
-        _LOGGER.debug(f"Data Keys: {list(data.keys())}")
         return data
 
     async def _insert_statistics(self, contract_id: int, is_smart_meter: bool) -> None:
@@ -327,7 +337,6 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 if from_date.hour == 23:
                     from_date = from_date + timedelta(hours=2)
 
-                _LOGGER.debug(f"Calculated from_date = {from_date.strftime('%Y-%m-%d %H:%M:%S')}")
                 today = datetime.today()
                 if today.date() == from_date.date():
                     _LOGGER.debug("The date to fetch is today or later, replacing it with Today at 01:00:00")
@@ -338,7 +347,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                                                     from_date,
                                                     ReadingResolution.DAILY)
                 if from_date.date() == today.date():
-                    self._today_readings[contract_id] = readings
+                    self._today_readings[str(contract_id) + "-" + device.device_number] = readings
 
             if not readings or not readings.data:
                 _LOGGER.debug("No recent usage data. Skipping update")
