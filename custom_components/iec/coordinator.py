@@ -356,7 +356,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             stats = await get_instance(self.hass).async_add_executor_job(
                 statistics_during_period,
                 self.hass,
-                readings.data[0].date - timedelta(hours=1),
+                readings.data[0].date,
                 None,
                 {cost_statistic_id, consumption_statistic_id},
                 "hour",
