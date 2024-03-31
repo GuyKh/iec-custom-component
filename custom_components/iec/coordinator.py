@@ -353,10 +353,14 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 _LOGGER.debug("No recent usage data. Skipping update")
                 continue
 
+            last_stat_req_hour = readings.data[0].date if readings.data[0].date.hour > 0 else \
+                (readings.data[0].date - timedelta(hours=1))
+
+            _LOGGER.debug(f"Fetching LongTerm Statistics since {last_stat_req_hour}")
             stats = await get_instance(self.hass).async_add_executor_job(
                 statistics_during_period,
                 self.hass,
-                readings.data[0].date,
+                last_stat_req_hour,
                 None,
                 {cost_statistic_id, consumption_statistic_id},
                 "hour",
