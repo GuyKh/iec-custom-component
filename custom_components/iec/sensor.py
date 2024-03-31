@@ -15,13 +15,14 @@ from homeassistant.components.sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfEnergy, UnitOfTime
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from iec_api.models.invoice import Invoice
 from iec_api.models.remote_reading import RemoteReading
 
-from .commons import find_reading_by_date
+from .commons import find_reading_by_date, get_device_info
 from .const import DOMAIN, ILS, STATICS_DICT_NAME, STATIC_KWH_TARIFF, FUTURE_CONSUMPTIONS_DICT_NAME, INVOICE_DICT_NAME, \
     ILS_PER_KWH, DAILY_READINGS_DICT_NAME, EMPTY_REMOTE_READING, CONTRACT_DICT_NAME, EMPTY_INVOICE, \
     ATTRIBUTES_DICT_NAME, METER_ID_ATTR_NAME
@@ -265,6 +266,7 @@ class IecSensor(CoordinatorEntity[IecApiCoordinator], SensorEntity):
         super().__init__(coordinator)
         self.entity_description = description
         self.contract_id = contract_id
+        self.meter_id = attributes_to_add.get(METER_ID_ATTR_NAME) if attributes_to_add else None
         self._attr_unique_id = f"{str(contract_id)}_{description.key}"
         self._attr_translation_key = f"{description.key}"
         self._attr_translation_placeholders = {"multi_contract": f"of {contract_id}"}
@@ -290,7 +292,7 @@ class IecSensor(CoordinatorEntity[IecApiCoordinator], SensorEntity):
         if self.coordinator.data is not None:
             if self.contract_id == STATICS_DICT_NAME:
                 return self.entity_description.value_fn(
-                    self.coordinator.data.get(self.contract_id)
+                    self.coordinator.data.get(self.contract_id, self.meter_id)
                 )
 
             # Trim leading 0000 if needed and align with coordinator keys
@@ -298,3 +300,9 @@ class IecSensor(CoordinatorEntity[IecApiCoordinator], SensorEntity):
                 self.coordinator.data.get(str(int(self.contract_id)))
             )
         return None
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return the device info."""
+        return get_device_info(self.contract_id, self.meter_id)
+
