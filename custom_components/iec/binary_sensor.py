@@ -14,7 +14,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .commons import get_device_info
 from .const import DOMAIN, STATICS_DICT_NAME, INVOICE_DICT_NAME, \
-    EMPTY_INVOICE, ATTRIBUTES_DICT_NAME
+    EMPTY_INVOICE, ATTRIBUTES_DICT_NAME, METER_ID_ATTR_NAME
 from .coordinator import IecApiCoordinator
 
 _LOGGER = logging.getLogger(__name__)
