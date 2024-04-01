@@ -237,12 +237,13 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                         remote_reading = await self._get_readings(contract_id, device.device_number, device.device_code,
                                                                   yesterday,
                                                                   ReadingResolution.WEEKLY)
-                        if remote_reading[device.device_number]:
+                        if remote_reading:
                             daily_readings[device.device_number] += remote_reading.data
                             weekly_future_consumption = remote_reading.future_consumption_info
 
                             # Remove duplicates
-                            daily_readings[device.device_number] = list(dict.fromkeys(daily_readings))
+                            daily_readings[device.device_number] = (
+                                list(dict.fromkeys(daily_readings[device.device_number])))
 
                             # Sort by Date
                             daily_readings[device.device_number].sort(key=lambda x: x.date)
