@@ -97,7 +97,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
     async def _get_readings(self, contract_id: int, device_id: str | int, device_code: str | int, date: datetime,
                             resolution: ReadingResolution):
-        key = (contract_id, int(device_id), int(device_code), date, resolution)
+        date_key = date.date()
+        key = (contract_id, int(device_id), int(device_code), date_key, resolution)
         reading = self._readings.get(key)
         if not reading:
             try:
