@@ -103,3 +103,86 @@ cards:
         - font-size: 15px
       
 ```
+
+
+
+### Energy Summary (by Moshiko Peer)
+![Energy Summary](assets/summary.png)
+(requires to create a helper `input.is_power` entity)
+```
+type: vertical-stack
+cards:
+  - chart_type: bar
+    period: hour
+    type: statistics-graph
+    entities:
+    - sensor.last_iec_bill_length_in_days
+    days_to_show: 2
+    stat_types:
+      - mean
+      - min
+      - max
+    title: מונה חברת חשמל
+  - show_name: true
+    show_icon: true
+    type: button
+    tap_action:
+    action: toggle
+    entity: input_boolean.power
+    name: צריכת חשמל כללית
+    icon_height: 60px
+  - type: conditional
+    conditions:
+    - entity: input_boolean.power
+      state: 'on'
+      card:
+        square: false
+        type: grid
+        cards:
+        - square: false
+          type: grid
+          cards:
+            - type: entity
+              entity: sensor.iec_latest_meter_reading
+              icon: mdi:transmission-tower
+              name: צריכה
+              state_color: true
+            - type: entity
+              entity: sensor.last_iec_bill_length_in_days
+              name: ימים שעברו
+            - type: entity
+              entity: sensor.last_iec_bill_electric_usage_to_date
+              name: חשבון קודם
+              icon: mdi:cash
+            - type: entity
+              entity: sensor.last_iec_bill_electric_cost
+              name: סכום לתשלום
+              icon: mdi:cash-multiple
+          columns: 2
+        - type: grid
+          cards:
+          - type: entity
+            entity: sensor.iec_this_month_electric_consumption
+            name: צריכה חודשית
+            icon: mdi:timer-sand
+            state_color: true
+          - type: entity
+            entity: sensor.iec_kwh_tariff
+            name: תעריף
+            icon: mdi:cash-register
+          columns: 2
+          square: false
+        - type: grid
+          cards:
+            - type: entity
+              entity: sensor.iec_yesterday_electric_consumption
+              name: צריכה של אתמול
+              icon: mdi:timer
+            - type: entity
+              entity: sensor.last_iec_bill_meter_reading
+              name: ק.מונה אחרונה
+              icon: mdi:book-edit
+          columns: 2
+          square: false
+        columns: 1
+```
