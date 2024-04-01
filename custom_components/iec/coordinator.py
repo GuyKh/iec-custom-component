@@ -242,7 +242,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                             weekly_future_consumption = remote_reading.future_consumption_info
 
                             # Remove duplicates
-                            daily_readings[device.device_number] = list(dict.fromkeys(daily_readings))
+                            daily_readings[device.device_number] = (
+                                list(dict.fromkeys(daily_readings[device.device_number])))
 
                             # Sort by Date
                             daily_readings[device.device_number].sort(key=lambda x: x.date)
