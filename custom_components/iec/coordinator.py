@@ -311,6 +311,10 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         devices = await self._get_devices_by_contract_id(contract_id)
         kwh_price = await self._get_kwh_tariff()
 
+        if not devices:
+            _LOGGER.error(f"Failed fetching devices for IEC Contract {contract_id}")
+            return
+
         for device in devices:
             id_prefix = f"iec_meter_{device.device_number}"
             consumption_statistic_id = f"{DOMAIN}:{id_prefix}_energy_consumption"
