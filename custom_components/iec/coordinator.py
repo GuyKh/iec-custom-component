@@ -380,8 +380,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             else:
                 cost_sum = cast(float, stats[cost_statistic_id][0]["sum"])
 
-            _LOGGER.debug(f"Last Consumption Sum for {contract_id}: {consumption_sum}")
-            _LOGGER.debug(f"Last Estimated Cost Sum for {contract_id}: {cost_sum}")
+            _LOGGER.debug(f"Last Consumption Sum for C[{contract_id}] D[{device.device_number}]: {consumption_sum}")
+            _LOGGER.debug(f"Last Estimated Cost Sum for C[{contract_id}] D[{device.device_number}]: {cost_sum}")
 
             new_readings: list[RemoteReading] = filter(lambda reading:
                                                        reading.date >= TIMEZONE.localize(
@@ -435,9 +435,10 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 )
 
             if readings_by_hour:
-                _LOGGER.debug(f"Last hour fetched for {contract_id}: {max(readings_by_hour, key=lambda k: k)}")
-                _LOGGER.debug(f"New Consumption Sum for {contract_id}: {consumption_sum}")
-                _LOGGER.debug(f"New Estimated Cost Sum for {contract_id}: {cost_sum}")
+                _LOGGER.debug(f"Last hour fetched for C[{contract_id}] D[{device.device_number}]: "
+                              f"{max(readings_by_hour, key=lambda k: k)}")
+                _LOGGER.debug(f"New Consumption Sum for C[{contract_id}] D[{device.device_number}]: {consumption_sum}")
+                _LOGGER.debug(f"New Estimated Cost Sum for C[{contract_id}] D[{device.device_number}]: {cost_sum}")
 
             async_add_external_statistics(
                 self.hass, consumption_metadata, consumption_statistics
