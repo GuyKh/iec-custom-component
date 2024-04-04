@@ -201,9 +201,11 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Dialog that informs the user that reauth is required."""
         assert self.reauth_entry
         errors: dict[str, str] = {}
+
         client: IecClient = self.client
 
         if user_input is not None and user_input[CONF_TOTP_SECRET] is not None:
+            assert client
             data = {**self.reauth_entry.data, **user_input}
             errors = await _validate_login(self.hass, data, client)
             if not errors:
@@ -217,6 +219,10 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
                 await self.hass.config_entries.async_reload(self.reauth_entry.entry_id)
                 return self.async_abort(reason="reauth_successful")
+
+        if not client:
+            self.client = IecClient(self.data[CONF_USER_ID], async_create_clientsession(self.hass))
+            client = self.client
 
         await client.login_with_id()
 
