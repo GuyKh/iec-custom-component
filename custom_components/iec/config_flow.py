@@ -201,6 +201,8 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Dialog that informs the user that reauth is required."""
         assert self.reauth_entry
         errors: dict[str, str] = {}
+
+        assert self.client
         client: IecClient = self.client
 
         if user_input is not None and user_input[CONF_TOTP_SECRET] is not None:

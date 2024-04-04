@@ -127,6 +127,9 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 hourly_readings = await self._get_readings(contract_id, device.device_number, device.device_code,
                                                            desired_date,
                                                            ReadingResolution.DAILY)
+            else:
+                _LOGGER.debug(
+                    f'Daily reading for date: {desired_date.strftime("%Y-%m-%d")} - using existing prefetched readings')
 
             daily_sum = 0
             if hourly_readings is None or hourly_readings.data is None:
@@ -231,7 +234,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                         daily_readings[device.device_number] = remote_reading.data
 
                     weekly_future_consumption = None
-                    if datetime.today().day == 1:
+                    if TIMEZONE.localize(datetime.today()).day == 1:
                         # if today's the 1st of the month, "yesterday" is on a different month
                         yesterday: datetime = monthly_report_req_date - timedelta(days=1)
                         remote_reading = await self._get_readings(contract_id, device.device_number, device.device_code,
@@ -249,19 +252,20 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                             daily_readings[device.device_number].sort(key=lambda x: x.date)
 
                     await self._verify_daily_readings_exist(daily_readings[device.device_number],
-                                                            datetime.today() - timedelta(days=1), device, contract_id)
+                                                            TIMEZONE.localize(datetime.today()) - timedelta(days=1),
+                                                            device, contract_id)
 
                     today_reading_key = str(contract_id) + "-" + device.device_number
                     today_reading = self._today_readings.get(today_reading_key)
 
                     if not today_reading:
                         today_reading = await self._get_readings(contract_id, device.device_number, device.device_code,
-                                                                 datetime.today(),
+                                                                 TIMEZONE.localize(datetime.today()),
                                                                  ReadingResolution.DAILY)
                         self._today_readings[today_reading_key] = today_reading
 
                     await self._verify_daily_readings_exist(daily_readings[device.device_number],
-                                                            datetime.today(), device, contract_id, today_reading)
+                                                            TIMEZONE.localize(datetime.today()), device, contract_id, today_reading)
 
                     # fallbacks for future consumption since IEC api is broken :/
                     if not future_consumption[device.device_number].future_consumption:
@@ -273,7 +277,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                             future_consumption[device.device_number] = (
                                 self._today_readings.get(today_reading_key).future_consumption_info)
                         else:
-                            req_date = datetime.today() - timedelta(days=2)
+                            req_date = TIMEZONE.localize(datetime.today()) - timedelta(days=2)
                             two_days_ago_reading = await self._get_readings(contract_id, device.device_number,
                                                                             device.device_code,
                                                                             req_date,
@@ -338,7 +342,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 if from_date.hour == 23:
                     from_date = from_date + timedelta(hours=2)
 
-                today = datetime.today()
+                today = TIMEZONE.localize(datetime.today())
                 if today.date() == from_date.date():
                     _LOGGER.debug("The date to fetch is today or later, replacing it with Today at 01:00:00")
                     from_date = TIMEZONE.localize(today.replace(hour=1, minute=0, second=0, microsecond=0))
