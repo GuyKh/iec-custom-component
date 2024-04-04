@@ -187,7 +187,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         for contract_id in self._contract_ids:
             # Because IEC API provides historical usage/cost with a delay of a couple of days
             # we need to insert data into statistics.
-            await self._insert_statistics(contract_id, contracts.get(contract_id).smart_meter)
+            self.hass.async_create_task(self._insert_statistics(contract_id, contracts.get(contract_id).smart_meter))
 
             try:
                 billing_invoices = await self.api.get_billing_invoices(self._bp_number, contract_id)
