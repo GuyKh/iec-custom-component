@@ -10,12 +10,12 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .commons import get_device_info
 from .const import DOMAIN, STATICS_DICT_NAME, INVOICE_DICT_NAME, \
     EMPTY_INVOICE, ATTRIBUTES_DICT_NAME, METER_ID_ATTR_NAME
 from .coordinator import IecApiCoordinator
+from .iec_entity import IecEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -69,14 +69,10 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class IecBinarySensorEntity(CoordinatorEntity[IecApiCoordinator], BinarySensorEntity):
+class IecBinarySensorEntity(IecEntity, BinarySensorEntity):
     """Defines an IEC binary sensor."""
 
-    _attr_has_entity_name = True
-
-    coordinator: IecApiCoordinator
     entity_description: IecBinarySensorEntityDescription
-    contract_id: str
 
     def __init__(
             self,
@@ -87,12 +83,10 @@ class IecBinarySensorEntity(CoordinatorEntity[IecApiCoordinator], BinarySensorEn
             attributes_to_add: dict | None = None
     ):
         """Initialize the sensor."""
-        super().__init__(coordinator)
+        super().__init__(coordinator, str(int(contract_id)),
+                         attributes_to_add.get(METER_ID_ATTR_NAME) if attributes_to_add else None)
         self.entity_description = entity_description
-        self.contract_id = str(int(contract_id))
-        self.meter_id = attributes_to_add.get(METER_ID_ATTR_NAME) if attributes_to_add else None
         self._attr_unique_id = f"{str(contract_id)}_{entity_description.key}"
-
 
         attributes = {
             "contract_id": contract_id
@@ -113,7 +107,6 @@ class IecBinarySensorEntity(CoordinatorEntity[IecApiCoordinator], BinarySensorEn
     def is_on(self) -> bool | None:
         """Return the state of the sensor."""
         return self.entity_description.value_fn(self.coordinator.data.get(self.contract_id))
-
 
     @property
     def device_info(self) -> DeviceInfo:
