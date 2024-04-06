@@ -97,7 +97,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
     async def _get_readings(self, contract_id: int, device_id: str | int, device_code: str | int, date: datetime,
                             resolution: ReadingResolution):
-        key = (contract_id, int(device_id), int(device_code), date, resolution)
+        date_key = date.date()
+        key = (contract_id, int(device_id), int(device_code), date_key, resolution)
         reading = self._readings.get(key)
         if not reading:
             try:
@@ -314,6 +315,10 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         devices = await self._get_devices_by_contract_id(contract_id)
         kwh_price = await self._get_kwh_tariff()
 
+        if not devices:
+            _LOGGER.error(f"Failed fetching devices for IEC Contract {contract_id}")
+            return
+
         for device in devices:
             id_prefix = f"iec_meter_{device.device_number}"
             consumption_statistic_id = f"{DOMAIN}:{id_prefix}_energy_consumption"
@@ -358,10 +363,14 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 _LOGGER.debug("No recent usage data. Skipping update")
                 continue
 
+            last_stat_hour = datetime.fromtimestamp(last_stat_time) if last_stat_time else readings.data[0].date
+            last_stat_req_hour = last_stat_hour if last_stat_hour.hour > 0 else (last_stat_hour - timedelta(hours=1))
+
+            _LOGGER.debug(f"Fetching LongTerm Statistics since {last_stat_req_hour}")
             stats = await get_instance(self.hass).async_add_executor_job(
                 statistics_during_period,
                 self.hass,
-                readings.data[0].date - timedelta(hours=1),
+                last_stat_req_hour,
                 None,
                 {cost_statistic_id, consumption_statistic_id},
                 "hour",
@@ -395,8 +404,16 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             grouped_new_readings_by_hour = itertools.groupby(new_readings,
                                                              key=lambda reading: reading.date
                                                              .replace(minute=0, second=0, microsecond=0))
-            readings_by_hour: dict[datetime, float] = {key: sum(reading.value for reading in list(group))
-                                                       for key, group in grouped_new_readings_by_hour}
+            readings_by_hour: dict[datetime, float] = {}
+            for key, group in grouped_new_readings_by_hour:
+                group_list = list(group)
+                if len(group_list) < 4:
+                    _LOGGER.debug(f"LongTerm Statistics - Skipping {key} since it's partial for the hour")
+                    continue
+                if key <= TIMEZONE.localize(last_stat_req_hour):
+                    _LOGGER.debug(f"LongTerm Statistics -Skipping {key} data since it's already reported")
+                    continue
+                readings_by_hour[key] = sum(reading.value for reading in group_list)
 
             consumption_metadata = StatisticMetaData(
                 has_mean=False,
