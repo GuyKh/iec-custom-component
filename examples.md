@@ -113,32 +113,33 @@ cards:
 type: vertical-stack
 cards:
   - chart_type: bar
-    period: hour
+    period: day
     type: statistics-graph
     entities:
-    - sensor.last_iec_bill_length_in_days
+      - sensor.last_iec_bill_length_in_days
     days_to_show: 2
     stat_types:
-      - mean
       - min
+      - mean
       - max
     title: מונה חברת חשמל
+    hide_legend: true
   - show_name: true
     show_icon: true
     type: button
     tap_action:
-    action: toggle
+      action: toggle
     entity: input_boolean.power
     name: צריכת חשמל כללית
     icon_height: 60px
   - type: conditional
     conditions:
-    - entity: input_boolean.power
-      state: 'on'
-      card:
-        square: false
-        type: grid
-        cards:
+      - entity: input_boolean.power
+        state: 'on'
+    card:
+      square: false
+      type: grid
+      cards:
         - square: false
           type: grid
           cards:
@@ -148,28 +149,29 @@ cards:
               name: צריכה
               state_color: true
             - type: entity
-              entity: sensor.last_iec_bill_length_in_days
-              name: ימים שעברו
+              entity: binary_sensor.iec_contract_347910537_meter_23511627_is_last_iec_invoice_paid
+              name: תשלום חשבונית
+              icon: mdi:cash-check
             - type: entity
-              entity: sensor.last_iec_bill_electric_usage_to_date
-              name: חשבון קודם
+              entity: sensor.last_iec_bill_amount_to_pay
+              name: חשבון קודם 
               icon: mdi:cash
             - type: entity
-              entity: sensor.last_iec_bill_electric_cost
+              entity: sensor.next_bill_electric_forecasted_cost
               name: סכום לתשלום
               icon: mdi:cash-multiple
           columns: 2
         - type: grid
           cards:
-          - type: entity
-            entity: sensor.iec_this_month_electric_consumption
-            name: צריכה חודשית
-            icon: mdi:timer-sand
-            state_color: true
-          - type: entity
-            entity: sensor.iec_kwh_tariff
-            name: תעריף
-            icon: mdi:cash-register
+            - type: entity
+              entity: sensor.iec_this_month_electric_consumption
+              name: צריכה חודשית
+              icon: mdi:timer-sand
+              state_color: true
+            - type: entity
+              entity: sensor.iec_kwh_tariff
+              name: תעריף
+              icon: mdi:cash-register
           columns: 2
           square: false
         - type: grid
@@ -184,5 +186,5 @@ cards:
               icon: mdi:book-edit
           columns: 2
           square: false
-        columns: 1
+      columns: 1
 ```
