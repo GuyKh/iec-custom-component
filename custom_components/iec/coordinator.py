@@ -405,15 +405,18 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                                                              key=lambda reading: reading.date
                                                              .replace(minute=0, second=0, microsecond=0))
             readings_by_hour: dict[datetime, float] = {}
+            if last_stat_req_hour and last_stat_req_hour.tzinfo is None:
+                last_stat_req_hour = TIMEZONE.localize(last_stat_req_hour)
+
             for key, group in grouped_new_readings_by_hour:
                 group_list = list(group)
                 if len(group_list) < 4:
                     _LOGGER.debug(f"LongTerm Statistics - Skipping {key} since it's partial for the hour")
                     continue
-                if key <= TIMEZONE.localize(last_stat_req_hour):
-                    _LOGGER.debug(f"LongTerm Statistics -Skipping {key} data since it's already reported")
+                if key <= last_stat_req_hour:
+                    _LOGGER.debug(f"LongTerm Statistics - Skipping {key} data since it's already reported")
                     continue
-                readings_by_hour[key] = sum(reading.value for reading in group_list)
+                readings_by_hour[key] = sum(reading.value for reading in group)
 
             consumption_metadata = StatisticMetaData(
                 has_mean=False,
