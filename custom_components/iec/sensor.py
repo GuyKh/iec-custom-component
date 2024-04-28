@@ -132,6 +132,12 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         value_fn=lambda data: (data[FUTURE_CONSUMPTIONS_DICT_NAME][data[ATTRIBUTES_DICT_NAME][METER_ID_ATTR_NAME]]
                                .total_import or 0) if (data[FUTURE_CONSUMPTIONS_DICT_NAME]) else None
     ),
+    IecEntityDescription(
+        key="elec_latest_meter_reading_date",
+        device_class=SensorDeviceClass.DATE,
+        value_fn=lambda data: (data[FUTURE_CONSUMPTIONS_DICT_NAME][data[ATTRIBUTES_DICT_NAME][METER_ID_ATTR_NAME]]
+                               .total_import_date or 0) if (data[FUTURE_CONSUMPTIONS_DICT_NAME]) else None
+    ),
 )
 
 ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
