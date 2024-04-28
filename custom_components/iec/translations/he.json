@@ -24,7 +24,7 @@
       "elec_latest_meter_reading": {
         "name": "קריאת מונה אחרונה {multi_contract}"
       },
-      "elec_latest_meter_reading": {
+      "elec_latest_meter_reading_date": {
         "name": "תאריך קריאת מונה אחרונה {multi_contract}"
       },
       "iec_last_elec_usage": {
