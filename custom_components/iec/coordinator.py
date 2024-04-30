@@ -227,23 +227,24 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 for device in devices:
                     attributes_to_add[METER_ID_ATTR_NAME] = device.device_number
 
-                    remote_reading = await self._get_readings(contract_id, device.device_number, device.device_code,
-                                                              monthly_report_req_date,
-                                                              ReadingResolution.MONTHLY)
-                    if remote_reading:
-                        future_consumption[device.device_number] = remote_reading.future_consumption_info
-                        daily_readings[device.device_number] = remote_reading.data
+                    this_month_daily_readings = await self._get_readings(contract_id, device.device_number,
+                                                                         device.device_code,
+                                                                         monthly_report_req_date,
+                                                                         ReadingResolution.MONTHLY)
+                    if this_month_daily_readings:
+                        daily_readings[device.device_number] = this_month_daily_readings.data
 
                     weekly_future_consumption = None
                     if TIMEZONE.localize(datetime.today()).day == 1:
                         # if today's the 1st of the month, "yesterday" is on a different month
                         yesterday: datetime = monthly_report_req_date - timedelta(days=1)
-                        remote_reading = await self._get_readings(contract_id, device.device_number, device.device_code,
-                                                                  yesterday,
-                                                                  ReadingResolution.WEEKLY)
-                        if remote_reading:
-                            daily_readings[device.device_number] += remote_reading.data
-                            weekly_future_consumption = remote_reading.future_consumption_info
+                        weekly_remote_reading = await self._get_readings(contract_id, device.device_number,
+                                                                         device.device_code,
+                                                                         yesterday,
+                                                                         ReadingResolution.WEEKLY)
+                        if weekly_remote_reading:
+                            daily_readings[device.device_number] += weekly_remote_reading.data
+                            weekly_future_consumption = weekly_remote_reading.future_consumption_info
 
                             # Remove duplicates
                             daily_readings[device.device_number] = (
@@ -251,6 +252,12 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
                             # Sort by Date
                             daily_readings[device.device_number].sort(key=lambda x: x.date)
+
+                    # Tomorrow weekly readings - for getting the future consumption
+                    tomorrow_readings = await self._get_readings(contract_id, device.device_number,
+                                                                 device.device_code,
+                                                                 monthly_report_req_date,
+                                                                 ReadingResolution.WEEKLY)
 
                     await self._verify_daily_readings_exist(daily_readings[device.device_number],
                                                             TIMEZONE.localize(datetime.today()) - timedelta(days=1),
@@ -266,28 +273,23 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                         self._today_readings[today_reading_key] = today_reading
 
                     await self._verify_daily_readings_exist(daily_readings[device.device_number],
-                                                            TIMEZONE.localize(datetime.today()), device, contract_id, today_reading)
+                                                            TIMEZONE.localize(datetime.today()), device, contract_id,
+                                                            today_reading)
 
-                    # fallbacks for future consumption since IEC api is broken :/
-                    if not future_consumption[device.device_number].future_consumption:
-                        if weekly_future_consumption and weekly_future_consumption.future_consumption:
-                            future_consumption[device.device_number] = weekly_future_consumption
-                        elif (self._today_readings.get(today_reading_key)
-                              and self._today_readings.get(today_reading_key)
-                                      .future_consumption_info.future_consumption):
-                            future_consumption[device.device_number] = (
-                                self._today_readings.get(today_reading_key).future_consumption_info)
-                        else:
-                            req_date = TIMEZONE.localize(datetime.today()) - timedelta(days=2)
-                            two_days_ago_reading = await self._get_readings(contract_id, device.device_number,
-                                                                            device.device_code,
-                                                                            req_date,
-                                                                            ReadingResolution.DAILY)
-
-                            if two_days_ago_reading:
-                                future_consumption[device.device_number] = two_days_ago_reading.future_consumption_info
-                            else:
-                                _LOGGER.debug("Failed fetching FutureConsumption, data in IEC API is corrupted")
+                    # fallbacks for future consumption since IEC api is inconsistent....
+                    if tomorrow_readings:
+                        future_consumption[device.device_number] = tomorrow_readings.future_consumption_info
+                    elif weekly_future_consumption:
+                        future_consumption[device.device_number] = weekly_future_consumption
+                    elif this_month_daily_readings:
+                        future_consumption[device.device_number] = this_month_daily_readings.future_consumption_info
+                    elif (self._today_readings.get(today_reading_key)
+                          and self._today_readings.get(today_reading_key)
+                                  .future_consumption_info.future_consumption):
+                        future_consumption[device.device_number] = (
+                            self._today_readings.get(today_reading_key).future_consumption_info)
+                    else:
+                        _LOGGER.debug("Failed fetching FutureConsumption, data in IEC API is corrupted")
 
             data[str(contract_id)] = {CONTRACT_DICT_NAME: contracts.get(contract_id),
                                       INVOICE_DICT_NAME: last_invoice,
