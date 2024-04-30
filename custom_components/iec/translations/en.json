@@ -24,6 +24,9 @@
       "elec_latest_meter_reading": {
         "name": "IEC latest meter reading {multi_contract}"
       },
+      "elec_latest_meter_reading_date": {
+        "name": "IEC latest meter reading date {multi_contract}"
+      },
       "iec_last_elec_usage": {
         "name": "Last IEC bill electric usage to date {multi_contract}"
       },
