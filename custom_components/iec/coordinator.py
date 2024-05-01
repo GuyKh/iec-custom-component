@@ -417,7 +417,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 if key <= last_stat_req_hour:
                     _LOGGER.debug(f"LongTerm Statistics - Skipping {key} data since it's already reported")
                     continue
-                readings_by_hour[key] = sum(reading.value for reading in group)
+                readings_by_hour[key] = sum(reading.value for reading in group_list)
 
             consumption_metadata = StatisticMetaData(
                 has_mean=False,
