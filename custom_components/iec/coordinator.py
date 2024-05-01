@@ -178,7 +178,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
         contracts: dict[int, Contract] = {int(c.contract_id): c for c in all_contracts if c.status == 1
                                           and int(c.contract_id) in self._contract_ids}
-
+        localized_today = TIMEZONE.localize(datetime.today())
         tariff = await self._get_kwh_tariff()
 
         data = {STATICS_DICT_NAME: {
@@ -219,8 +219,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 # For some reason, there are differences between sending 2024-03-01 and sending 2024-03-07 (Today)
                 # So instead of sending the 1st day of the month, just sending today date
 
-                monthly_report_req_date: datetime = TIMEZONE.localize(datetime.today().replace(hour=1, minute=0,
-                                                                                               second=0, microsecond=0))
+                monthly_report_req_date: datetime = localized_today.replace(hour=1, minute=0,
+                                                                            second=0, microsecond=0)
 
                 devices = await self._get_devices_by_contract_id(contract_id)
 
@@ -235,7 +235,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                         daily_readings[device.device_number] = remote_reading.data
 
                     weekly_future_consumption = None
-                    if TIMEZONE.localize(datetime.today()).day == 1:
+                    if localized_today.day == 1:
                         # if today's the 1st of the month, "yesterday" is on a different month
                         yesterday: datetime = monthly_report_req_date - timedelta(days=1)
                         remote_reading = await self._get_readings(contract_id, device.device_number, device.device_code,
@@ -253,7 +253,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                             daily_readings[device.device_number].sort(key=lambda x: x.date)
 
                     await self._verify_daily_readings_exist(daily_readings[device.device_number],
-                                                            TIMEZONE.localize(datetime.today()) - timedelta(days=1),
+                                                            localized_today - timedelta(days=1),
                                                             device, contract_id)
 
                     today_reading_key = str(contract_id) + "-" + device.device_number
@@ -261,12 +261,13 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
                     if not today_reading:
                         today_reading = await self._get_readings(contract_id, device.device_number, device.device_code,
-                                                                 TIMEZONE.localize(datetime.today()),
+                                                                 localized_today,
                                                                  ReadingResolution.DAILY)
                         self._today_readings[today_reading_key] = today_reading
 
                     await self._verify_daily_readings_exist(daily_readings[device.device_number],
-                                                            TIMEZONE.localize(datetime.today()), device, contract_id, today_reading)
+                                                            localized_today, device, contract_id,
+                                                            today_reading)
 
                     # fallbacks for future consumption since IEC api is broken :/
                     if not future_consumption[device.device_number].future_consumption:
@@ -278,7 +279,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                             future_consumption[device.device_number] = (
                                 self._today_readings.get(today_reading_key).future_consumption_info)
                         else:
-                            req_date = TIMEZONE.localize(datetime.today()) - timedelta(days=2)
+                            req_date = localized_today - timedelta(days=2)
                             two_days_ago_reading = await self._get_readings(contract_id, device.device_number,
                                                                             device.device_code,
                                                                             req_date,
@@ -314,6 +315,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         _LOGGER.debug(f"Updating statistics for IEC Contract {contract_id}")
         devices = await self._get_devices_by_contract_id(contract_id)
         kwh_price = await self._get_kwh_tariff()
+        localized_today = TIMEZONE.localize(datetime.today())
 
         if not devices:
             _LOGGER.error(f"Failed fetching devices for IEC Contract {contract_id}")
@@ -347,16 +349,15 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 if from_date.hour == 23:
                     from_date = from_date + timedelta(hours=2)
 
-                today = TIMEZONE.localize(datetime.today())
-                if today.date() == from_date.date():
+                if localized_today.date() == from_date.date():
                     _LOGGER.debug("The date to fetch is today or later, replacing it with Today at 01:00:00")
-                    from_date = TIMEZONE.localize(today.replace(hour=1, minute=0, second=0, microsecond=0))
+                    from_date = localized_today.replace(hour=1, minute=0, second=0, microsecond=0)
 
                 _LOGGER.debug(f"Fetching consumption from {from_date.strftime('%Y-%m-%d %H:%M:%S')}")
                 readings = await self._get_readings(contract_id, device.device_number, device.device_code,
                                                     from_date,
                                                     ReadingResolution.DAILY)
-                if from_date.date() == today.date():
+                if from_date.date() == localized_today.date():
                     self._today_readings[str(contract_id) + "-" + device.device_number] = readings
 
             if not readings or not readings.data:
