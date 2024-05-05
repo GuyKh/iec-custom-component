@@ -97,8 +97,17 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
     async def _get_readings(self, contract_id: int, device_id: str | int, device_code: str | int, date: datetime,
                             resolution: ReadingResolution):
-        date_key = date.date()
-        key = (contract_id, int(device_id), int(device_code), date_key, resolution)
+
+        date_key = date.strftime("%Y")
+        match resolution:
+            case ReadingResolution.DAILY:
+                date_key += date.strftime("-%m-%d")
+            case ReadingResolution.WEEKLY:
+                date_key += "/" + str(date.isocalendar().week)
+            case ReadingResolution.MONTHLY:
+                date_key += date.strftime("-%m")
+
+        key = (contract_id, int(device_id), date_key)
         reading = self._readings.get(key)
         if not reading:
             try:
