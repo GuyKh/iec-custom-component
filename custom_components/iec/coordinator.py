@@ -106,6 +106,9 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 date_key += "/" + str(date.isocalendar().week)
             case ReadingResolution.MONTHLY:
                 date_key += date.strftime("-%m")
+            case _:
+                _LOGGER.warning("Unexpected resolution value")
+                date_key += date.strftime("-%m-%d")
 
         key = (contract_id, int(device_id), date_key)
         reading = self._readings.get(key)
