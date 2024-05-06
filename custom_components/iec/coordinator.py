@@ -97,8 +97,20 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
     async def _get_readings(self, contract_id: int, device_id: str | int, device_code: str | int, date: datetime,
                             resolution: ReadingResolution):
-        date_key = date.date()
-        key = (contract_id, int(device_id), int(device_code), date_key, resolution)
+
+        date_key = date.strftime("%Y")
+        match resolution:
+            case ReadingResolution.DAILY:
+                date_key += date.strftime("-%m-%d")
+            case ReadingResolution.WEEKLY:
+                date_key += "/" + str(date.isocalendar().week)
+            case ReadingResolution.MONTHLY:
+                date_key += date.strftime("-%m")
+            case _:
+                _LOGGER.warning("Unexpected resolution value")
+                date_key += date.strftime("-%m-%d")
+
+        key = (contract_id, int(device_id), date_key)
         reading = self._readings.get(key)
         if not reading:
             try:
@@ -220,7 +232,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 # So instead of sending the 1st day of the month, just sending today date
 
                 monthly_report_req_date: datetime = localized_today.replace(hour=1, minute=0,
-                                                                            second=0, microsecond=0)
+                                                                            second=0, microsecond=0) + timedelta(days=1)
 
                 devices = await self._get_devices_by_contract_id(contract_id)
 
@@ -232,7 +244,16 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                                                               ReadingResolution.MONTHLY)
                     if remote_reading:
                         future_consumption[device.device_number] = remote_reading.future_consumption_info
+
+                    if monthly_report_req_date.date() == localized_today.date():
                         daily_readings[device.device_number] = remote_reading.data
+                    else:
+                        this_month_reading = await self._get_readings(contract_id, device.device_number,
+                                                                      device.device_code,
+                                                                      localized_today,
+                                                                      ReadingResolution.MONTHLY)
+                        if this_month_reading:
+                            daily_readings[device.device_number] = this_month_reading.data
 
                     weekly_future_consumption = None
                     if localized_today.day == 1:

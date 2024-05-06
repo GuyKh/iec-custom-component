@@ -189,7 +189,7 @@ ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         state_class=SensorStateClass.TOTAL_INCREASING,
         suggested_display_precision=0,
         value_fn=lambda data: data[INVOICE_DICT_NAME].meter_readings[0].reading if (
-                data[INVOICE_DICT_NAME] != EMPTY_INVOICE) else None,
+                data[INVOICE_DICT_NAME] != EMPTY_INVOICE and data[INVOICE_DICT_NAME].meter_readings) else None,
     )
 )
 
