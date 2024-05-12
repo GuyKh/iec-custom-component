@@ -2,7 +2,7 @@
   "entity": {
     "binary_sensor": {
       "last_iec_invoice_paid": {
-        "name": "Is last IEC invoice {multi_contract} paid"
+        "name": "Is last invoice {multi_contract} paid"
       }
     },
     "sensor": {
@@ -13,48 +13,48 @@
         "name": "Next bill electric forecasted cost {multi_contract}"
       },
       "elec_today_consumption": {
-        "name": "IEC today electric consumption {multi_contract}"
+        "name": "today electric consumption {multi_contract}"
       },
       "elec_yesterday_consumption": {
-        "name": "IEC yesterday electric consumption {multi_contract}"
+        "name": "yesterday electric consumption {multi_contract}"
       },
       "elec_this_month_consumption": {
-        "name": "IEC this month electric consumption {multi_contract}"
+        "name": "this month electric consumption {multi_contract}"
       },
       "elec_latest_meter_reading": {
-        "name": "IEC latest meter reading {multi_contract}"
+        "name": "latest meter reading {multi_contract}"
       },
       "iec_last_elec_usage": {
-        "name": "Last IEC bill electric usage to date {multi_contract}"
+        "name": "Last bill electric usage to date {multi_contract}"
       },
       "iec_last_cost": {
-        "name": "Last IEC bill electric cost {multi_contract}"
+        "name": "Last bill electric cost {multi_contract}"
       },
       "iec_last_bill_remain_to_pay": {
-        "name": "Last IEC bill amount to pay {multi_contract}"
+        "name": "Last bill amount to pay {multi_contract}"
       },
       "iec_last_number_of_days": {
-        "name": "Last IEC bill length in days {multi_contract}"
+        "name": "Last bill length in days {multi_contract}"
       },
       "iec_bill_date": {
-        "name": "Last IEC bill date {multi_contract}"
+        "name": "Last bill date {multi_contract}"
       },
       "iec_bill_last_payment_date": {
-        "name": "Last IEC bill payment date {multi_contract}"
+        "name": "Last bill payment date {multi_contract}"
       },
       "iec_last_meter_reading": {
-        "name": "Last IEC bill meter reading {multi_contract}"
+        "name": "Last bill meter reading {multi_contract}"
       },
       "iec_kwh_tariff": {
-        "name": "IEC kWh tariff"
+        "name": "kWh tariff"
       }
     }
   },
   "config": {
     "step": {
       "user": {
-        "title": "IEC Account ID",
-        "description": "Enter your IEC User ID (תעודת זהות)",
+        "title": "Account ID",
+        "description": "Enter your User ID (תעודת זהות)",
         "data": {
           "user_id": "User ID"
         }

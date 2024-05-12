@@ -111,4 +111,4 @@ class IecBinarySensorEntity(IecEntity, BinarySensorEntity):
     @property
     def device_info(self) -> DeviceInfo:
         """Return the device info."""
-        return get_device_info(self.contract_id, self.meter_id)
+        return get_device_info(self.contract_id, None)

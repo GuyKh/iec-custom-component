@@ -42,10 +42,13 @@ def get_device_info(contract_id: str, meter_id: str | None) -> DeviceInfo:
     """
 
     if contract_id == STATICS_DICT_NAME:
-        name = "IEC Static Data"
+        name = "IEC Static"
     else:
-        contract_id = str(int(contract_id))
-        name = f"IEC Contract {contract_id}{((' - Meter ' + meter_id) if meter_id else '')}"
+        if meter_id:
+            name = f"IEC Meter [' + {meter_id} + ']')"
+        else:
+            contract_id = str(int(contract_id))
+            name = f"IEC Contract [{contract_id}]"
 
     identifier: str = contract_id + (("_" + meter_id) if meter_id else "")
     return DeviceInfo(
