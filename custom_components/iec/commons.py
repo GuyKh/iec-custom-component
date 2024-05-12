@@ -55,12 +55,17 @@ def get_device_info(contract_id: str, meter_id: str | None, iec_entity_type: Iec
         case IecEntityType.CONTRACT:
             contract_id = str(int(contract_id))
             name = f"IEC Contract [{contract_id}]"
+            model = "Contract: " + contract_id
         case IecEntityType.METER:
             name = f"IEC Meter [{meter_id}]"
+            model = "Contract: " + contract_id
+            serial_number = ("Meter ID: " + meter_id) if meter_id else ""
         case _:
+            model = None
+            serial_number = None
             name = "IEC"
 
-    identifier: str = contract_id + (("_" + meter_id) if meter_id else "")
+    identifier: str = contract_id + (("_" + meter_id) if (iec_entity_type == IecEntityType.METER and meter_id) else "")
     return DeviceInfo(
         identifiers={
             # Serial numbers are unique identifiers within a specific domain
@@ -68,6 +73,6 @@ def get_device_info(contract_id: str, meter_id: str | None, iec_entity_type: Iec
         },
         name=name,
         manufacturer="Israel Electric Company",
-        model="Contract: " + contract_id,
-        serial_number=("Meter ID: " + meter_id) if meter_id else "",
+        model=model,
+        serial_number=serial_number,
     )
