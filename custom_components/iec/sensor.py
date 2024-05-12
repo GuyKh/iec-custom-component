@@ -20,7 +20,7 @@ from homeassistant.helpers.typing import StateType
 from iec_api.models.invoice import Invoice
 from iec_api.models.remote_reading import RemoteReading
 
-from .commons import find_reading_by_date
+from .commons import find_reading_by_date, IecEntityType
 from .const import DOMAIN, ILS, STATICS_DICT_NAME, STATIC_KWH_TARIFF, FUTURE_CONSUMPTIONS_DICT_NAME, INVOICE_DICT_NAME, \
     ILS_PER_KWH, DAILY_READINGS_DICT_NAME, EMPTY_REMOTE_READING, CONTRACT_DICT_NAME, EMPTY_INVOICE, \
     ATTRIBUTES_DICT_NAME, METER_ID_ATTR_NAME
@@ -62,6 +62,16 @@ def get_previous_bill_kwh_price(invoice: Invoice) -> float:
     if not invoice.consumption or not invoice.amount_origin:
         return 0
     return invoice.consumption / invoice.amount_origin
+
+
+def _get_iec_type_by_class(description: IecEntityDescription) -> IecEntityType:
+    """Get IEC type by class."""
+
+    if isinstance(description, IecContractEntityDescription):
+        return IecEntityType.CONTRACT
+    if description.key == "meter":
+        return IecEntityType.METER
+    return IecEntityType.GENERIC
 
 
 def _get_reading_by_date(readings: list[RemoteReading] | None, desired_date: datetime) -> RemoteReading:
@@ -272,7 +282,8 @@ class IecSensor(IecEntity, SensorEntity):
     ) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator, contract_id,
-                         attributes_to_add.get(METER_ID_ATTR_NAME) if attributes_to_add else None)
+                         attributes_to_add.get(METER_ID_ATTR_NAME) if attributes_to_add else None,
+                         _get_iec_type_by_class(description))
         self.entity_description = description
         self._attr_unique_id = f"{str(contract_id)}_{description.key}"
         self._attr_translation_key = f"{description.key}"
