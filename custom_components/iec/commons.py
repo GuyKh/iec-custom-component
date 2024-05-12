@@ -56,7 +56,7 @@ def get_device_info(contract_id: str, meter_id: str | None, iec_entity_type: Iec
             contract_id = str(int(contract_id))
             name = f"IEC Contract [{contract_id}]"
         case IecEntityType.METER:
-            name = f"IEC Meter [{meter_id}]')"
+            name = f"IEC Meter [{meter_id}]"
         case _:
             name = "IEC"
 
