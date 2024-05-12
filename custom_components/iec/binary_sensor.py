@@ -85,7 +85,7 @@ class IecBinarySensorEntity(IecEntity, BinarySensorEntity):
         """Initialize the sensor."""
         super().__init__(coordinator, str(int(contract_id)),
                          attributes_to_add.get(METER_ID_ATTR_NAME) if attributes_to_add else None,
-                         IecEntityType.GENERIC)
+                         IecEntityType.CONTRACT)
         self.entity_description = entity_description
         self._attr_unique_id = f"{str(contract_id)}_{entity_description.key}"
 
@@ -112,4 +112,4 @@ class IecBinarySensorEntity(IecEntity, BinarySensorEntity):
     @property
     def device_info(self) -> DeviceInfo:
         """Return the device info."""
-        return get_device_info(self.contract_id, None, IecEntityType.GENERIC)
+        return get_device_info(self.contract_id, None, IecEntityType.CONTRACT)
