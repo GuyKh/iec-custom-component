@@ -3,7 +3,7 @@
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from custom_components.iec import IecApiCoordinator
-from custom_components.iec.commons import get_device_info
+from custom_components.iec.commons import get_device_info, IecEntityType
 
 
 class IecEntity(CoordinatorEntity[IecApiCoordinator]):
@@ -11,9 +11,11 @@ class IecEntity(CoordinatorEntity[IecApiCoordinator]):
 
     _attr_has_entity_name = True
 
-    def __init__(self, coordinator: IecApiCoordinator, contract_id: str, meter_id: str | None) -> None:
+    def __init__(self, coordinator: IecApiCoordinator, contract_id: str, meter_id: str | None,
+                 iec_entity_type: IecEntityType):
         """Set up a IEC entity."""
         super().__init__(coordinator)
         self.contract_id = contract_id
         self.meter_id = meter_id
-        self._attr_device_info = get_device_info(self.contract_id, self.meter_id)
+        self.iec_entity_type = iec_entity_type
+        self._attr_device_info = get_device_info(self.contract_id, self.meter_id, self.iec_entity_type)
