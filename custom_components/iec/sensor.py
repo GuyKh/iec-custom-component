@@ -69,7 +69,7 @@ def _get_iec_type_by_class(description: IecEntityDescription) -> IecEntityType:
 
     if isinstance(description, IecContractEntityDescription):
         return IecEntityType.CONTRACT
-    if description.key == "meter":
+    if isinstance(description, IecMeterEntityDescription):
         return IecEntityType.METER
     return IecEntityType.GENERIC
 
