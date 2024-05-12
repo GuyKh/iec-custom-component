@@ -13,16 +13,16 @@
         "name": "Next bill electric forecasted cost {multi_contract}"
       },
       "elec_today_consumption": {
-        "name": "today electric consumption {multi_contract}"
+        "name": "Today electric consumption {multi_contract}"
       },
       "elec_yesterday_consumption": {
-        "name": "yesterday electric consumption {multi_contract}"
+        "name": "Yesterday electric consumption {multi_contract}"
       },
       "elec_this_month_consumption": {
-        "name": "this month electric consumption {multi_contract}"
+        "name": "This month electric consumption {multi_contract}"
       },
       "elec_latest_meter_reading": {
-        "name": "latest meter reading {multi_contract}"
+        "name": "Latest meter reading {multi_contract}"
       },
       "iec_last_elec_usage": {
         "name": "Last bill electric usage to date {multi_contract}"
