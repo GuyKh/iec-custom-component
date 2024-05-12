@@ -80,7 +80,8 @@ class IecBinarySensorEntity(IecEntity, BinarySensorEntity):
             entity_description: IecBinarySensorEntityDescription,
             contract_id: str,
             is_multi_contract: bool,
-            attributes_to_add: dict | None = None
+            attributes_to_add: dict | None = None,
+            iec_entity_type = IecEntityType.GENERIC
     ):
         """Initialize the sensor."""
         super().__init__(coordinator, str(int(contract_id)),
