@@ -186,10 +186,10 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
         all_contracts: list[Contract] = await self.api.get_contracts(self._bp_number)
         if not self._contract_ids:
-            self._contract_ids = [int(contract.contract_id) for contract in all_contracts]
+            self._contract_ids = [int(contract.contract_id) for contract in all_contracts if contract.status == 1]
 
-        contracts: dict[int, Contract] = {int(c.contract_id): c for c in all_contracts
-                                          if int(c.contract_id) in self._contract_ids}
+        contracts: dict[int, Contract] = {int(c.contract_id): c for c in all_contracts if c.status == 1
+                                          and int(c.contract_id) in self._contract_ids}
         localized_today = TIMEZONE.localize(datetime.today())
         tariff = await self._get_kwh_tariff()
 
