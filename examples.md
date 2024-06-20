@@ -188,3 +188,59 @@ cards:
           square: false
       columns: 1
 ```
+
+### Summary (by Noy (Petel))
+![Energy Summary](assets/noy-summary.png)
+(requires using *Sections* dashboard)
+```
+    sections:
+      - type: grid
+        cards:
+          - type: tile
+            entity: sensor.iec_kwh_tariff
+            color: green
+            vertical: true
+            name: null
+          - type: tile
+            entity: sensor.last_iec_bill_date
+            color: green
+            vertical: true
+            name: תאריך חשבונית אחרונה
+          - type: gauge
+            entity: >-
+              sensor.iec_contract_123_meter_456_next_bill_electric_forecasted_cost
+            min: 0
+            needle: true
+            severity:
+              green: 0
+              yellow: 1100
+              red: 1500
+            max: 2200
+          - type: gauge
+            entity: sensor.last_iec_bill_electric_cost
+            min: 0
+            needle: true
+            severity:
+              green: 0
+              yellow: 1100
+              red: 1500
+            max: 2200
+          - type: entities
+            entities:
+              - entity: sensor.last_iec_bill_length_in_days
+              - entity: >-
+                  sensor.iec_contract_123_meter_456_iec_today_electric_consumption
+              - entity: >-
+                  sensor.iec_contract_123_meter_456_iec_yesterday_electric_consumption
+              - entity: >-
+                  sensor.iec_contract_123_meter_456_iec_this_month_electric_consumption
+              - entity: sensor.last_iec_bill_electric_usage_to_date
+              - entity: >-
+                  sensor.iec_contract_123_meter_456_iec_latest_meter_reading
+              - entity: >-
+                  sensor.iec_contract_123_meter_456_iec_latest_meter_reading
+              - entity: >-
+                  sensor.iec_contract_123_meter_456_next_bill_electric_forecasted_usage
+              - entity: sensor.last_iec_bill_payment_date
+        title: 'נתונים מחברת חשמל'
+```
