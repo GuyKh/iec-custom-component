@@ -191,6 +191,7 @@ cards:
 
 ### Summary (by Noy (Petel))
 ![Energy Summary](assets/noy-summary.png)
+
 (requires using *Sections* dashboard)
 ```
     sections:
