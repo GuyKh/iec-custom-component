@@ -23,7 +23,6 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from iec_api.iec_client import IecClient
 from iec_api.models.contract import Contract
 from iec_api.models.device import Device, Devices
-from iec_api.models.device_identity import DeviceDetails
 from iec_api.models.exceptions import IECError
 from iec_api.models.jwt import JWT
 from iec_api.models.remote_reading import ReadingResolution, RemoteReading, FutureConsumptionInfo, RemoteReadingResponse
@@ -144,8 +143,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         power_size = self._power_size_by_connection_size.get(connection_size)
         if not power_size:
             try:
-                power_size = self.api.get_distribution_tariff(phase)
-                self._power_size_by_connection_size[phase] = power_size
+                power_size = self.api.get_distribution_tariff(connection_size)
+                self._power_size_by_connection_size[connection_size] = power_size
             except IECError as e:
                 _LOGGER.exception(f"Failed fetching Power Size by Connection Size {connection_size}", e)
         return power_size or 0.0
@@ -379,8 +378,9 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     delivery_tariff = await self._get_delivery_tariff(phase_count)
                     power_size = await self._get_power_size(connection_size)
 
-                    estimated_bill = self._calculate_estimated_bill(device.device_number, future_consumption, kwh_tariff, kva_tariff,
-                                                                    distribution_tariff, delivery_tariff, power_size)
+                    estimated_bill = self._calculate_estimated_bill(device.device_number, future_consumption,
+                                                                    kwh_tariff, kva_tariff, distribution_tariff,
+                                                                    delivery_tariff, power_size)
 
             data[str(contract_id)] = {CONTRACT_DICT_NAME: contracts.get(contract_id),
                                       INVOICE_DICT_NAME: last_invoice,
@@ -567,8 +567,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             )
 
     @staticmethod
-    def _calculate_estimated_bill(meter_id, future_consumptions: dict[str, FutureConsumptionInfo | None], kwh_tariff, kva_tariff, distribution_tariff,
-                                  delivery_tariff, power_size):
+    def _calculate_estimated_bill(meter_id, future_consumptions: dict[str, FutureConsumptionInfo | None], kwh_tariff,
+                                  kva_tariff, distribution_tariff, delivery_tariff, power_size):
         future_consumption_info: FutureConsumptionInfo = future_consumptions[meter_id]
         future_consumption = future_consumption_info.future_consumption
 
