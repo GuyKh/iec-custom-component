@@ -1,4 +1,5 @@
 """Coordinator to handle IEC connections."""
+import calendar
 import itertools
 import logging
 import socket
@@ -21,7 +22,8 @@ from homeassistant.helpers import aiohttp_client
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from iec_api.iec_client import IecClient
 from iec_api.models.contract import Contract
-from iec_api.models.device import Device
+from iec_api.models.device import Device, Devices
+from iec_api.models.device_identity import DeviceDetails
 from iec_api.models.exceptions import IECError
 from iec_api.models.jwt import JWT
 from iec_api.models.remote_reading import ReadingResolution, RemoteReading, FutureConsumptionInfo, RemoteReadingResponse
@@ -30,7 +32,7 @@ from .commons import find_reading_by_date
 from .const import DOMAIN, CONF_USER_ID, STATICS_DICT_NAME, STATIC_KWH_TARIFF, INVOICE_DICT_NAME, \
     FUTURE_CONSUMPTIONS_DICT_NAME, DAILY_READINGS_DICT_NAME, STATIC_BP_NUMBER, ILS, CONF_BP_NUMBER, \
     CONF_SELECTED_CONTRACTS, CONTRACT_DICT_NAME, EMPTY_INVOICE, ELECTRIC_INVOICE_DOC_ID, ATTRIBUTES_DICT_NAME, \
-    CONTRACT_ID_ATTR_NAME, IS_SMART_METER_ATTR_NAME, METER_ID_ATTR_NAME
+    CONTRACT_ID_ATTR_NAME, IS_SMART_METER_ATTR_NAME, METER_ID_ATTR_NAME, STATIC_KVA_TARIFF, ESTIMATED_BILL_DICT_NAME
 
 _LOGGER = logging.getLogger(__name__)
 TIMEZONE = pytz.timezone("Asia/Jerusalem")
@@ -59,7 +61,12 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         self._entry_data = config_entry.data
         self._today_readings = {}
         self._devices_by_contract_id = {}
+        self._devices_by_meter_id = {}
+        self._delivery_tariff_by_pahse = {}
+        self._distribution_tariff_by_pahse = {}
+        self._power_size_by_connection_size = {}
         self._kwh_tariff: float | None = None
+        self._kva_tariff: float | None = None
         self._readings = {}
         self.api = IecClient(
             self._entry_data[CONF_USER_ID],
@@ -87,6 +94,16 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 _LOGGER.exception(f"Failed fetching devices by contract {contract_id}", e)
         return devices
 
+    async def _get_devices_by_device_id(self, meter_id) -> Devices:
+        devices = self._devices_by_meter_id.get(meter_id)
+        if not devices:
+            try:
+                devices = await self.api.get_device_by_device_id(str(meter_id))
+                self._devices_by_meter_id[meter_id] = devices
+            except IECError as e:
+                _LOGGER.exception(f"Failed fetching device details by meter id {meter_id}", e)
+        return devices
+
     async def _get_kwh_tariff(self) -> float:
         if not self._kwh_tariff:
             try:
@@ -94,6 +111,44 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             except IECError as e:
                 _LOGGER.exception("Failed fetching kWh Tariff", e)
         return self._kwh_tariff or 0.0
+
+    async def _get_kva_tariff(self) -> float:
+        if not self._kva_tariff:
+            try:
+                self._kva_tariff = await self.api.get_kva_tariff()
+            except IECError as e:
+                _LOGGER.exception("Failed fetching KVA Tariff", e)
+        return self._kva_tariff or 0.0
+
+    async def _get_delivery_tariff(self, phase) -> float:
+        delivery_tariff = self._delivery_tariff_by_pahse.get(phase)
+        if not delivery_tariff:
+            try:
+                delivery_tariff = self.api.get_delivery_tariff(phase)
+                self._delivery_tariff_by_pahse[phase] = delivery_tariff
+            except IECError as e:
+                _LOGGER.exception(f"Failed fetching Delivery Tariff by phase {phase}", e)
+        return delivery_tariff or 0.0
+
+    async def _get_distribution_tariff(self, phase) -> float:
+        distribution_tariff = self._distribution_tariff_by_pahse.get(phase)
+        if not distribution_tariff:
+            try:
+                distribution_tariff = self.api.get_distribution_tariff(phase)
+                self._distribution_tariff_by_pahse[phase] = distribution_tariff
+            except IECError as e:
+                _LOGGER.exception(f"Failed fetching Distribution Tariff by phase {phase}", e)
+        return distribution_tariff or 0.0
+
+    async def _get_power_size(self, connection_size) -> float:
+        power_size = self._power_size_by_connection_size.get(connection_size)
+        if not power_size:
+            try:
+                power_size = self.api.get_distribution_tariff(phase)
+                self._power_size_by_connection_size[phase] = power_size
+            except IECError as e:
+                _LOGGER.exception(f"Failed fetching Power Size by Connection Size {connection_size}", e)
+        return power_size or 0.0
 
     async def _get_readings(self, contract_id: int, device_id: str | int, device_code: str | int, date: datetime,
                             resolution: ReadingResolution):
@@ -191,12 +246,16 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         contracts: dict[int, Contract] = {int(c.contract_id): c for c in all_contracts if c.status == 1
                                           and int(c.contract_id) in self._contract_ids}
         localized_today = TIMEZONE.localize(datetime.today())
-        tariff = await self._get_kwh_tariff()
+        kwh_tariff = await self._get_kwh_tariff()
+        kva_tariff = await self._get_kva_tariff()
 
         data = {STATICS_DICT_NAME: {
-            STATIC_KWH_TARIFF: tariff,
+            STATIC_KWH_TARIFF: kwh_tariff,
+            STATIC_KVA_TARIFF: kva_tariff,
             STATIC_BP_NUMBER: self._bp_number
         }}
+
+        estimated_bill = None
 
         _LOGGER.debug(f"All Contract Ids: {list(contracts.keys())}")
 
@@ -311,12 +370,25 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                             else:
                                 _LOGGER.debug("Failed fetching FutureConsumption, data in IEC API is corrupted")
 
+                    devices_by_id: Devices = await self._get_devices_by_device_id(device.device_number)
+                    phase_count = devices_by_id.counter_devices[0].connection_size.phase
+                    connection_size = (devices_by_id.counter_devices[0].
+                                       connection_size.representative_connection_size)
+
+                    distribution_tariff = await self._get_distribution_tariff(phase_count)
+                    delivery_tariff = await self._get_delivery_tariff(phase_count)
+                    power_size = await self._get_power_size(connection_size)
+
+                    estimated_bill = self._calculate_estimated_bill(device.device_number, future_consumption, kwh_tariff, kva_tariff,
+                                                                    distribution_tariff, delivery_tariff, power_size)
+
             data[str(contract_id)] = {CONTRACT_DICT_NAME: contracts.get(contract_id),
                                       INVOICE_DICT_NAME: last_invoice,
                                       FUTURE_CONSUMPTIONS_DICT_NAME: future_consumption,
                                       DAILY_READINGS_DICT_NAME: daily_readings,
-                                      STATICS_DICT_NAME: {STATIC_KWH_TARIFF: tariff},  # workaround,
-                                      ATTRIBUTES_DICT_NAME: attributes_to_add
+                                      STATICS_DICT_NAME: {STATIC_KWH_TARIFF: kwh_tariff},  # workaround,
+                                      ATTRIBUTES_DICT_NAME: attributes_to_add,
+                                      ESTIMATED_BILL_DICT_NAME: estimated_bill
                                       }
 
         # Clean up for next cycle
@@ -493,3 +565,20 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             async_add_external_statistics(
                 self.hass, cost_metadata, cost_statistics
             )
+
+    @staticmethod
+    def _calculate_estimated_bill(meter_id, future_consumptions: dict[str, FutureConsumptionInfo | None], kwh_tariff, kva_tariff, distribution_tariff,
+                                  delivery_tariff, power_size):
+        future_consumption_info: FutureConsumptionInfo = future_consumptions[meter_id]
+        future_consumption = future_consumption_info.future_consumption
+
+        now = datetime.now()
+        days_of_invoice = now.day
+        days_in_current_month = calendar.monthrange(now.year, now.month)[1]
+
+        consumption_price = future_consumption * kwh_tariff
+        kva_price = power_size * kva_tariff / 365
+        distribution_price = (distribution_tariff / days_in_current_month) * days_of_invoice
+        delivery_price = (delivery_tariff / days_in_current_month) * days_of_invoice
+
+        return consumption_price + kva_price + distribution_price + delivery_price

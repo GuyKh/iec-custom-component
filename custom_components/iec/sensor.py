@@ -23,7 +23,7 @@ from iec_api.models.remote_reading import RemoteReading
 from .commons import find_reading_by_date, IecEntityType
 from .const import DOMAIN, ILS, STATICS_DICT_NAME, STATIC_KWH_TARIFF, FUTURE_CONSUMPTIONS_DICT_NAME, INVOICE_DICT_NAME, \
     ILS_PER_KWH, DAILY_READINGS_DICT_NAME, EMPTY_REMOTE_READING, CONTRACT_DICT_NAME, EMPTY_INVOICE, \
-    ATTRIBUTES_DICT_NAME, METER_ID_ATTR_NAME
+    ATTRIBUTES_DICT_NAME, METER_ID_ATTR_NAME, ESTIMATED_BILL_DICT_NAME
 from .coordinator import IecApiCoordinator
 from .iec_entity import IecEntity
 
@@ -105,10 +105,7 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         # state_class=SensorStateClass.TOTAL,
         suggested_display_precision=2,
         # The API doesn't provide future *cost* so we can try to estimate it by the previous consumption
-        value_fn=lambda data:
-        ((data[FUTURE_CONSUMPTIONS_DICT_NAME][data[ATTRIBUTES_DICT_NAME][METER_ID_ATTR_NAME]].future_consumption or 0)
-         * data[STATICS_DICT_NAME][STATIC_KWH_TARIFF]) if (data[FUTURE_CONSUMPTIONS_DICT_NAME]
-                                                           and data[ATTRIBUTES_DICT_NAME][METER_ID_ATTR_NAME]) else None
+        value_fn=lambda data: data[ESTIMATED_BILL_DICT_NAME]
     ),
     IecMeterEntityDescription(
         key="elec_today_consumption",
