@@ -5,6 +5,7 @@ import logging
 import socket
 from datetime import datetime, timedelta
 from typing import cast, Any  # noqa: UP035
+from collections import Counter
 
 import pytz
 from homeassistant.components.recorder import get_instance
@@ -378,9 +379,10 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     delivery_tariff = await self._get_delivery_tariff(phase_count)
                     power_size = await self._get_power_size(connection_size)
 
-                    estimated_bill = self._calculate_estimated_bill(device.device_number, future_consumption,
-                                                                    kwh_tariff, kva_tariff, distribution_tariff,
-                                                                    delivery_tariff, power_size)
+                    estimated_bill, fixed_price, consumption_price, total_days = (
+                        self._calculate_estimated_bill(device.device_number, future_consumption,
+                                                       kwh_tariff, kva_tariff, distribution_tariff,
+                                                       delivery_tariff, power_size, last_invoice))
 
             data[str(contract_id)] = {CONTRACT_DICT_NAME: contracts.get(contract_id),
                                       INVOICE_DICT_NAME: last_invoice,
@@ -568,17 +570,53 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
     @staticmethod
     def _calculate_estimated_bill(meter_id, future_consumptions: dict[str, FutureConsumptionInfo | None], kwh_tariff,
-                                  kva_tariff, distribution_tariff, delivery_tariff, power_size):
+                                  kva_tariff, distribution_tariff, delivery_tariff, power_size, last_invoice):
         future_consumption_info: FutureConsumptionInfo = future_consumptions[meter_id]
         future_consumption = future_consumption_info.future_consumption
 
-        now = datetime.now()
-        days_of_invoice = now.day
-        days_in_current_month = calendar.monthrange(now.year, now.month)[1]
+        kva_price = power_size * kva_tariff / 365
+
+        total_kva_price = 0
+        distribution_price = 0
+        delivery_price = 0
 
         consumption_price = future_consumption * kwh_tariff
-        kva_price = power_size * kva_tariff / 365
-        distribution_price = (distribution_tariff / days_in_current_month) * days_of_invoice
-        delivery_price = (delivery_tariff / days_in_current_month) * days_of_invoice
+        total_days = 0
 
-        return consumption_price + kva_price + distribution_price + delivery_price
+        if last_invoice != EMPTY_INVOICE:
+            today = datetime.today()
+
+            current_date = last_invoice.to_date
+            month_counter = Counter()
+
+            while current_date <= today:
+                # Use (year, month) as the key for counting
+                month_year = (current_date.year, current_date.month)
+                month_counter[month_year] += 1
+
+                # Move to the next day
+                current_date += timedelta(days=1)
+
+            for (year, month), days in month_counter.items():
+                days_in_month = calendar.monthrange(year, month)[1]
+                total_kva_price = kva_price * days
+                distribution_price = (distribution_tariff / days_in_month) * days
+                delivery_price = (delivery_tariff / days_in_month) * days
+                total_days += days
+        else:
+            now = datetime.now()
+            total_days = now.day
+            days_in_current_month = calendar.monthrange(now.year, now.month)[1]
+
+            consumption_price = future_consumption * kwh_tariff
+            total_kva_price = kva_price * total_days
+            distribution_price = (distribution_tariff / days_in_current_month) * total_days
+            delivery_price = (delivery_tariff / days_in_current_month) * total_days
+
+        _LOGGER.debug(f'Calculated estimated bill: No. of days: {total_days}, total KVA price: {total_kva_price}, '
+                      f'total distribution price: {distribution_price}, total delivery price: {delivery_price}, '
+                      f'consumption price: {consumption_price}')
+
+        fixed_price = total_kva_price + distribution_price + delivery_price
+        total_estimated_bill = consumption_price + fixed_price
+        return total_estimated_bill, fixed_price, consumption_price, total_days
