@@ -367,14 +367,9 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 from_date = datetime.fromtimestamp(last_stat_time)
                 _LOGGER.debug(f"Last statistics are from {from_date.strftime('%Y-%m-%d %H:%M:%S')}")
 
-                if from_date.hour == 23:
-                    from_date = from_date + timedelta(hours=2)
-
-                if localized_today.date() == from_date.date():
-                    _LOGGER.debug("The date to fetch is today or later, replacing it with Today at 01:00:00")
-                    from_date = localized_today.replace(hour=1, minute=0, second=0, microsecond=0)
-
+                from_date = localized_today - timedelta(days=1)
                 _LOGGER.debug(f"Fetching consumption from {from_date.strftime('%Y-%m-%d %H:%M:%S')}")
+                
                 readings = await self._get_readings(contract_id, device.device_number, device.device_code,
                                                     from_date,
                                                     ReadingResolution.DAILY)
