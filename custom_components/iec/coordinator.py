@@ -369,7 +369,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
                 from_date = localized_today - timedelta(days=1)
                 _LOGGER.debug(f"Fetching consumption from {from_date.strftime('%Y-%m-%d %H:%M:%S')}")
-                
+
                 readings = await self._get_readings(contract_id, device.device_number, device.device_code,
                                                     from_date,
                                                     ReadingResolution.DAILY)
