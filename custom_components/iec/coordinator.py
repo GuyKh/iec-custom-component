@@ -144,7 +144,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         power_size = self._power_size_by_connection_size.get(connection_size)
         if not power_size:
             try:
-                power_size = self.api.get_power_size(connection_size)
+                power_size = await self.api.get_power_size(connection_size)
                 self._power_size_by_connection_size[connection_size] = power_size
             except IECError as e:
                 _LOGGER.exception(f"Failed fetching Power Size by Connection Size {connection_size}", e)
@@ -371,6 +371,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                                 _LOGGER.debug("Failed fetching FutureConsumption, data in IEC API is corrupted")
 
                     devices_by_id: Devices = await self._get_devices_by_device_id(device.device_number)
+                    last_meter_read = int(devices_by_id.counter_devices[0].last_mr)
+                    last_meter_read_date = devices_by_id.counter_devices[0].last_mr_date
                     phase_count = devices_by_id.counter_devices[0].connection_size.phase
                     connection_size = (devices_by_id.counter_devices[0].
                                        connection_size.representative_connection_size)
@@ -381,6 +383,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
                     estimated_bill, fixed_price, consumption_price, total_days = (
                         self._calculate_estimated_bill(device.device_number, future_consumption,
+                                                       last_meter_read, last_meter_read_date,
                                                        kwh_tariff, kva_tariff, distribution_tariff,
                                                        delivery_tariff, power_size, last_invoice))
 
@@ -569,10 +572,11 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             )
 
     @staticmethod
-    def _calculate_estimated_bill(meter_id, future_consumptions: dict[str, FutureConsumptionInfo | None], kwh_tariff,
+    def _calculate_estimated_bill(meter_id, future_consumptions: dict[str, FutureConsumptionInfo | None],
+                                  last_meter_read, last_meter_read_date, kwh_tariff,
                                   kva_tariff, distribution_tariff, delivery_tariff, power_size, last_invoice):
         future_consumption_info: FutureConsumptionInfo = future_consumptions[meter_id]
-        future_consumption = future_consumption_info.future_consumption
+        future_consumption = future_consumption_info.total_import - last_meter_read
 
         kva_price = power_size * kva_tariff / 365
 
@@ -586,10 +590,10 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         today = TIMEZONE.localize(datetime.today())
 
         if last_invoice != EMPTY_INVOICE:
-            current_date = last_invoice.to_date
+            current_date = last_meter_read_date + timedelta(days=1)
             month_counter = Counter()
 
-            while current_date <= today:
+            while current_date <= today.date():
                 # Use (year, month) as the key for counting
                 month_year = (current_date.year, current_date.month)
                 month_counter[month_year] += 1
