@@ -371,8 +371,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                                 _LOGGER.debug("Failed fetching FutureConsumption, data in IEC API is corrupted")
 
                     devices_by_id: Devices = await self._get_devices_by_device_id(device.device_number)
-                    last_meter_read = devices_by_id.counter_devices[0].last_meter_read
-                    last_meter_read_date = devices_by_id.counter_devices[0].last_meter_read_date
+                    last_meter_read = devices_by_id.counter_devices[0].last_mr
+                    last_meter_read_date = devices_by_id.counter_devices[0].last_mr_date
                     phase_count = devices_by_id.counter_devices[0].connection_size.phase
                     connection_size = (devices_by_id.counter_devices[0].
                                        connection_size.representative_connection_size)
