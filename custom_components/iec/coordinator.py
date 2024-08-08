@@ -572,10 +572,9 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             )
 
     @staticmethod
-    def _calculate_estimated_bill(meter_id, future_consumptions: dict[str, FutureConsumptionInfo | None], 
+    def _calculate_estimated_bill(meter_id, future_consumptions: dict[str, FutureConsumptionInfo | None],
                                   last_meter_read, last_meter_read_date, kwh_tariff,
                                   kva_tariff, distribution_tariff, delivery_tariff, power_size, last_invoice):
-        
         future_consumption_info: FutureConsumptionInfo = future_consumptions[meter_id]
         future_consumption = future_consumption_info.total_import - last_meter_read
 
@@ -594,7 +593,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             current_date = last_meter_read_date + timedelta(days=1)
             month_counter = Counter()
 
-            while current_date <= today:
+            while current_date <= today.date():
                 # Use (year, month) as the key for counting
                 month_year = (current_date.year, current_date.month)
                 month_counter[month_year] += 1
