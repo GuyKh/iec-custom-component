@@ -124,7 +124,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         delivery_tariff = self._delivery_tariff_by_pahse.get(phase)
         if not delivery_tariff:
             try:
-                delivery_tariff = self.api.get_delivery_tariff(phase)
+                delivery_tariff = await self.api.get_delivery_tariff(phase)
                 self._delivery_tariff_by_pahse[phase] = delivery_tariff
             except IECError as e:
                 _LOGGER.exception(f"Failed fetching Delivery Tariff by phase {phase}", e)
@@ -134,7 +134,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         distribution_tariff = self._distribution_tariff_by_pahse.get(phase)
         if not distribution_tariff:
             try:
-                distribution_tariff = self.api.get_distribution_tariff(phase)
+                distribution_tariff = await self.api.get_distribution_tariff(phase)
                 self._distribution_tariff_by_pahse[phase] = distribution_tariff
             except IECError as e:
                 _LOGGER.exception(f"Failed fetching Distribution Tariff by phase {phase}", e)
@@ -144,7 +144,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         power_size = self._power_size_by_connection_size.get(connection_size)
         if not power_size:
             try:
-                power_size = self.api.get_distribution_tariff(connection_size)
+                power_size = self.api.get_power_size(connection_size)
                 self._power_size_by_connection_size[connection_size] = power_size
             except IECError as e:
                 _LOGGER.exception(f"Failed fetching Power Size by Connection Size {connection_size}", e)
@@ -583,9 +583,9 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         consumption_price = future_consumption * kwh_tariff
         total_days = 0
 
-        if last_invoice != EMPTY_INVOICE:
-            today = datetime.today()
+        today = TIMEZONE.localize(datetime.today())
 
+        if last_invoice != EMPTY_INVOICE:
             current_date = last_invoice.to_date
             month_counter = Counter()
 
@@ -604,9 +604,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 delivery_price = (delivery_tariff / days_in_month) * days
                 total_days += days
         else:
-            now = datetime.now()
-            total_days = now.day
-            days_in_current_month = calendar.monthrange(now.year, now.month)[1]
+            total_days = today.day
+            days_in_current_month = calendar.monthrange(today.year, today.month)[1]
 
             consumption_price = future_consumption * kwh_tariff
             total_kva_price = kva_price * total_days
