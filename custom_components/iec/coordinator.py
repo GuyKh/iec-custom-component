@@ -144,7 +144,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         power_size = self._power_size_by_connection_size.get(connection_size)
         if not power_size:
             try:
-                power_size = self.api.get_power_size(connection_size)
+                power_size = await self.api.get_power_size(connection_size)
                 self._power_size_by_connection_size[connection_size] = power_size
             except IECError as e:
                 _LOGGER.exception(f"Failed fetching Power Size by Connection Size {connection_size}", e)
