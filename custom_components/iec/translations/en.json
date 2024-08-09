@@ -7,10 +7,17 @@
     },
     "sensor": {
       "elec_forecasted_usage": {
-        "name": "Next bill electric forecasted usage {multi_contract}"
+        "name": "Next electric bill forecasted usage {multi_contract}"
       },
       "elec_forecasted_cost": {
-        "name": "Next bill electric forecasted cost {multi_contract}"
+        "name": "Next electric bill forecasted cost {multi_contract}",
+        "state_attributes": {
+          "total_bill_days": { "name": "Total Bill Days" },
+          "consumption_price": { "name": "Consumption Price" },
+          "delivery_price": { "name": "Delivery Price" },
+          "distribution_price": { "name": "Distribution Price" },
+          "total_kva_price": { "name": "Total KVA Price" }
+        }
       },
       "elec_today_consumption": {
         "name": "Today electric consumption {multi_contract}"
