@@ -5,6 +5,7 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, date
+from typing import Union, Dict
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -25,7 +26,7 @@ from .const import DOMAIN, ILS, STATICS_DICT_NAME, STATIC_KWH_TARIFF, FUTURE_CON
     ILS_PER_KWH, DAILY_READINGS_DICT_NAME, EMPTY_REMOTE_READING, CONTRACT_DICT_NAME, EMPTY_INVOICE, \
     ATTRIBUTES_DICT_NAME, METER_ID_ATTR_NAME, ESTIMATED_BILL_DICT_NAME, TOTAL_EST_BILL_ATTR_NAME, EST_BILL_DAYS_ATTR_NAME, \
     EST_BILL_CONSUMPTION_PRICE_ATTR_NAME, EST_BILL_DELIVERY_PRICE_ATTR_NAME, EST_BILL_DISTRIBUTION_PRICE_ATTR_NAME, \
-    EST_BILL_TOTAL_KVA_PRICE_ATTR_NAME
+    EST_BILL_TOTAL_KVA_PRICE_ATTR_NAME, EST_BILL_KWH_CONSUMPTION_ATTR_NAME, 
 from .coordinator import IecApiCoordinator
 from .iec_entity import IecEntity
 
