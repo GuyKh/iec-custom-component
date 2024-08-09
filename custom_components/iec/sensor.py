@@ -108,14 +108,14 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         # state_class=SensorStateClass.TOTAL,
         suggested_display_precision=2,
         # The API doesn't provide future *cost* so we can try to estimate it by the previous consumption
-        value_fn=lambda data: data[ESTIMATED_BILL_DICT_NAME][TOTAL_EST_BILL_ATTR_NAME]
+        value_fn=lambda data: (data[ESTIMATED_BILL_DICT_NAME][TOTAL_EST_BILL_ATTR_NAME] or 0)
         custom_attrs_fn=lambda data: {
             EST_BILL_DAYS_ATTR_NAME: data[ESTIMATED_BILL_DICT_NAME][EST_BILL_DAYS_ATTR_NAME],
             EST_BILL_CONSUMPTION_PRICE_ATTR_NAME: data[ESTIMATED_BILL_DICT_NAME][EST_BILL_CONSUMPTION_PRICE_ATTR_NAME],
             EST_BILL_DELIVERY_PRICE_ATTR_NAME: data[ESTIMATED_BILL_DICT_NAME][EST_BILL_DELIVERY_PRICE_ATTR_NAME],
             EST_BILL_DISTRIBUTION_PRICE_ATTR_NAME: data[ESTIMATED_BILL_DICT_NAME][EST_BILL_DISTRIBUTION_PRICE_ATTR_NAME],
             EST_BILL_TOTAL_KVA_PRICE_ATTR_NAME: data[ESTIMATED_BILL_DICT_NAME][EST_BILL_TOTAL_KVA_PRICE_ATTR_NAME],
-        }
+        } if data[ESTIMATED_BILL_DICT_NAME] or None
     ),
     IecMeterEntityDescription(
         key="elec_today_consumption",

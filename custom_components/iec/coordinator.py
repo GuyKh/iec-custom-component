@@ -258,7 +258,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             STATIC_BP_NUMBER: self._bp_number
         }}
 
-        estimated_bill = None
+        estimated_bill_dict = None
 
         _LOGGER.debug(f"All Contract Ids: {list(contracts.keys())}")
 
@@ -384,8 +384,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     delivery_tariff = await self._get_delivery_tariff(phase_count)
                     power_size = await self._get_power_size(connection_size)
 
-                    estimated_bill, fixed_price, consumption_price, total_days,
-                        delivery_price, distribution_price, total_kva_price, estimated_kwh_consumption = (
+                    estimated_bill, fixed_price, consumption_price, total_days, delivery_price, distribution_price, \
+                    total_kva_price, estimated_kwh_consumption = (
                             self._calculate_estimated_bill(device.device_number, future_consumption,
                                                         last_meter_read, last_meter_read_date,
                                                         kwh_tariff, kva_tariff, distribution_tariff,
@@ -407,7 +407,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                                       DAILY_READINGS_DICT_NAME: daily_readings,
                                       STATICS_DICT_NAME: {STATIC_KWH_TARIFF: kwh_tariff},  # workaround,
                                       ATTRIBUTES_DICT_NAME: attributes_to_add,
-                                      ESTIMATED_BILL_DICT_NAME: estimated_bill
+                                      ESTIMATED_BILL_DICT_NAME: estimated_bill_dict
                                       }
 
         # Clean up for next cycle
