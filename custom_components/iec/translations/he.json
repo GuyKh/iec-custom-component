@@ -10,7 +10,14 @@
         "name": "סך צריכת החשמל בחשבונית הבאה {multi_contract}"
       },
       "elec_forecasted_cost": {
-        "name": "סך עלות צריכת החשמל בחשבונית הבאה {multi_contract}"
+        "name": "סך עלות צריכת החשמל בחשבונית הבאה {multi_contract}",
+        "state_attributes": {
+          "total_bill_days": { "name": "מס׳ ימים לחיוב" },
+          "consumption_price": { "name": "עלות צריכה" },
+          "delivery_price": { "name": "עלות אספקה" },
+          "distribution_price": { "name": "עלות חלוקה" },
+          "total_kva_price": { "name": "עלות קיבולת לKVA" }
+        }
       },
       "elec_today_consumption": {
         "name": "סך צריכת החשמל היום {multi_contract}"

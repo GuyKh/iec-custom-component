@@ -32,7 +32,10 @@ from .commons import find_reading_by_date
 from .const import DOMAIN, CONF_USER_ID, STATICS_DICT_NAME, STATIC_KWH_TARIFF, INVOICE_DICT_NAME, \
     FUTURE_CONSUMPTIONS_DICT_NAME, DAILY_READINGS_DICT_NAME, STATIC_BP_NUMBER, ILS, CONF_BP_NUMBER, \
     CONF_SELECTED_CONTRACTS, CONTRACT_DICT_NAME, EMPTY_INVOICE, ELECTRIC_INVOICE_DOC_ID, ATTRIBUTES_DICT_NAME, \
-    CONTRACT_ID_ATTR_NAME, IS_SMART_METER_ATTR_NAME, METER_ID_ATTR_NAME, STATIC_KVA_TARIFF, ESTIMATED_BILL_DICT_NAME
+    CONTRACT_ID_ATTR_NAME, IS_SMART_METER_ATTR_NAME, METER_ID_ATTR_NAME, STATIC_KVA_TARIFF, ESTIMATED_BILL_DICT_NAME, \
+    TOTAL_EST_BILL_ATTR_NAME, EST_BILL_DAYS_ATTR_NAME, EST_BILL_CONSUMPTION_PRICE_ATTR_NAME, \
+    EST_BILL_DELIVERY_PRICE_ATTR_NAME, EST_BILL_DISTRIBUTION_PRICE_ATTR_NAME, EST_BILL_TOTAL_KVA_PRICE_ATTR_NAME, \
+    EST_BILL_KWH_CONSUMPTION_ATTR_NAME
 
 _LOGGER = logging.getLogger(__name__)
 TIMEZONE = pytz.timezone("Asia/Jerusalem")
@@ -255,7 +258,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             STATIC_BP_NUMBER: self._bp_number
         }}
 
-        estimated_bill = None
+        estimated_bill_dict = None
 
         _LOGGER.debug(f"All Contract Ids: {list(contracts.keys())}")
 
@@ -381,11 +384,22 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     delivery_tariff = await self._get_delivery_tariff(phase_count)
                     power_size = await self._get_power_size(connection_size)
 
-                    estimated_bill, fixed_price, consumption_price, total_days = (
-                        self._calculate_estimated_bill(device.device_number, future_consumption,
-                                                       last_meter_read, last_meter_read_date,
-                                                       kwh_tariff, kva_tariff, distribution_tariff,
-                                                       delivery_tariff, power_size, last_invoice))
+                    estimated_bill, fixed_price, consumption_price, total_days, delivery_price, distribution_price, \
+                    total_kva_price, estimated_kwh_consumption = (
+                            self._calculate_estimated_bill(device.device_number, future_consumption,
+                                                        last_meter_read, last_meter_read_date,
+                                                        kwh_tariff, kva_tariff, distribution_tariff,
+                                                        delivery_tariff, power_size, last_invoice))
+
+                    estimated_bill_dict = {
+                        TOTAL_EST_BILL_ATTR_NAME: estimated_bill,
+                        EST_BILL_DAYS_ATTR_NAME: total_days,
+                        EST_BILL_CONSUMPTION_PRICE_ATTR_NAME: consumption_price,
+                        EST_BILL_DELIVERY_PRICE_ATTR_NAME: delivery_price,
+                        EST_BILL_DISTRIBUTION_PRICE_ATTR_NAME: distribution_price,
+                        EST_BILL_TOTAL_KVA_PRICE_ATTR_NAME: total_kva_price,
+                        EST_BILL_KWH_CONSUMPTION_ATTR_NAME: estimated_kwh_consumption
+                    }
 
             data[str(contract_id)] = {CONTRACT_DICT_NAME: contracts.get(contract_id),
                                       INVOICE_DICT_NAME: last_invoice,
@@ -393,7 +407,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                                       DAILY_READINGS_DICT_NAME: daily_readings,
                                       STATICS_DICT_NAME: {STATIC_KWH_TARIFF: kwh_tariff},  # workaround,
                                       ATTRIBUTES_DICT_NAME: attributes_to_add,
-                                      ESTIMATED_BILL_DICT_NAME: estimated_bill
+                                      ESTIMATED_BILL_DICT_NAME: estimated_bill_dict
                                       }
 
         # Clean up for next cycle
@@ -622,4 +636,5 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
         fixed_price = total_kva_price + distribution_price + delivery_price
         total_estimated_bill = consumption_price + fixed_price
-        return total_estimated_bill, fixed_price, consumption_price, total_days
+        return total_estimated_bill, fixed_price, consumption_price, total_days, \
+            delivery_price, distribution_price, total_kva_price, future_consumption
