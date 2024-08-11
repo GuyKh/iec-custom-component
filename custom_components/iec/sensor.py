@@ -303,9 +303,11 @@ class IecSensor(IecEntity, SensorEntity):
             attributes.update(attributes_to_add)
 
         if self.entity_description.custom_attrs_fn:
-            attributes.update(self.entity_description.custom_attrs_fn(
+            custom_attr = self.entity_description.custom_attrs_fn(
                 self.coordinator.data.get(str(int(self.contract_id)))
-            ))
+            )
+            if custom_attr:
+                attributes.update(custom_attr)
 
         if is_multi_contract:
             attributes["is_multi_contract"] = is_multi_contract
