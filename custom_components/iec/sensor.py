@@ -305,7 +305,7 @@ class IecSensor(IecEntity, SensorEntity):
 
         if self.entity_description.custom_attrs_fn:
             attributes.update(self.entity_description.custom_attrs_fn(
-                self.coordinator.data.get(self.contract_id, self.meter_id)
+                self.coordinator.data.get(str(int(self.contract_id)))
             ))
 
         if is_multi_contract:
