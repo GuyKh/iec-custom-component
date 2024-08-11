@@ -285,6 +285,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             daily_readings: dict[str, list[RemoteReading] | None] | None = {}
 
             is_smart_meter = contracts.get(contract_id).smart_meter
+            is_private_producer = contracts.get(contract_id).from_private_producer
             attributes_to_add = {CONTRACT_ID_ATTR_NAME: str(contract_id),
                                  IS_SMART_METER_ATTR_NAME: is_smart_meter,
                                  METER_ID_ATTR_NAME: None}
@@ -373,12 +374,18 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                             else:
                                 _LOGGER.debug("Failed fetching FutureConsumption, data in IEC API is corrupted")
 
-                    devices_by_id: Devices = await self._get_devices_by_device_id(device.device_number)
-                    last_meter_read = int(devices_by_id.counter_devices[0].last_mr)
-                    last_meter_read_date = devices_by_id.counter_devices[0].last_mr_date
-                    phase_count = devices_by_id.counter_devices[0].connection_size.phase
-                    connection_size = (devices_by_id.counter_devices[0].
-                                       connection_size.representative_connection_size)
+                    if not from_private_producer:
+                        devices_by_id: Devices = await self._get_devices_by_device_id(device.device_number)
+                        last_meter_read = int(devices_by_id.counter_devices[0].last_mr)
+                        last_meter_read_date = devices_by_id.counter_devices[0].last_mr_date
+                        phase_count = devices_by_id.counter_devices[0].connection_size.phase
+                        connection_size = (devices_by_id.counter_devices[0].
+                                        connection_size.representative_connection_size)
+                    else:
+                        last_meter_read = int(last_invoice.meter_readings[0].reading)
+                        last_meter_read_date = last_invoice.to_date
+                        phase_count = 1         # ToDo
+                        connection_size = "3X25"    # ToDo
 
                     distribution_tariff = await self._get_distribution_tariff(phase_count)
                     delivery_tariff = await self._get_delivery_tariff(phase_count)
