@@ -96,8 +96,7 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         # state_class=SensorStateClass.TOTAL,
         suggested_display_precision=3,
-        value_fn=lambda data:
-        (data[ESTIMATED_BILL_DICT_NAME][EST_BILL_KWH_CONSUMPTION_ATTR_NAME]) if data[ESTIMATED_BILL_DICT_NAME] else 0,
+        value_fn=lambda data: (data[ESTIMATED_BILL_DICT_NAME][EST_BILL_KWH_CONSUMPTION_ATTR_NAME] if data[ESTIMATED_BILL_DICT_NAME] else 0)
         if (data[ESTIMATED_BILL_DICT_NAME]
             and data[ESTIMATED_BILL_DICT_NAME][EST_BILL_KWH_CONSUMPTION_ATTR_NAME]) else None
     ),
