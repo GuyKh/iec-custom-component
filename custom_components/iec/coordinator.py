@@ -295,7 +295,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 # So instead of sending the 1st day of the month, just sending today date
 
                 monthly_report_req_date: datetime = localized_today.replace(hour=1, minute=0,
-                                                                            second=0, microsecond=0) + timedelta(days=1)
+                                                                            second=0, microsecond=0) - timedelta(days=1)
 
                 devices = await self._get_devices_by_contract_id(contract_id)
 
