@@ -96,8 +96,7 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         # state_class=SensorStateClass.TOTAL,
         suggested_display_precision=3,
-        value_fn=lambda data:
-        (data[ESTIMATED_BILL_DICT_NAME][EST_BILL_KWH_CONSUMPTION_ATTR_NAME] or 0)
+        value_fn=lambda data: (data[ESTIMATED_BILL_DICT_NAME][EST_BILL_KWH_CONSUMPTION_ATTR_NAME] if data[ESTIMATED_BILL_DICT_NAME] else 0)
         if (data[ESTIMATED_BILL_DICT_NAME]
             and data[ESTIMATED_BILL_DICT_NAME][EST_BILL_KWH_CONSUMPTION_ATTR_NAME]) else None
     ),
@@ -108,7 +107,7 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         # state_class=SensorStateClass.TOTAL,
         suggested_display_precision=2,
         # The API doesn't provide future *cost* so we can try to estimate it by the previous consumption
-        value_fn=lambda data: (data[ESTIMATED_BILL_DICT_NAME][TOTAL_EST_BILL_ATTR_NAME] or 0),
+        value_fn=lambda data: (data[ESTIMATED_BILL_DICT_NAME][TOTAL_EST_BILL_ATTR_NAME]) if data[ESTIMATED_BILL_DICT_NAME] else 0,
         custom_attrs_fn=lambda data: {
             EST_BILL_DAYS_ATTR_NAME: data[ESTIMATED_BILL_DICT_NAME][EST_BILL_DAYS_ATTR_NAME],
             EST_BILL_CONSUMPTION_PRICE_ATTR_NAME: data[ESTIMATED_BILL_DICT_NAME][EST_BILL_CONSUMPTION_PRICE_ATTR_NAME],
@@ -304,9 +303,11 @@ class IecSensor(IecEntity, SensorEntity):
             attributes.update(attributes_to_add)
 
         if self.entity_description.custom_attrs_fn:
-            attributes.update(self.entity_description.custom_attrs_fn(
+            custom_attr = self.entity_description.custom_attrs_fn(
                 self.coordinator.data.get(str(int(self.contract_id)))
-            ))
+            )
+            if custom_attr:
+                attributes.update(custom_attr)
 
         if is_multi_contract:
             attributes["is_multi_contract"] = is_multi_contract
