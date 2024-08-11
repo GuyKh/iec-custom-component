@@ -285,6 +285,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             daily_readings: dict[str, list[RemoteReading] | None] | None = {}
 
             is_smart_meter = contracts.get(contract_id).smart_meter
+            is_private_producer = contracts.get(contract_id).from_private_producer
             attributes_to_add = {CONTRACT_ID_ATTR_NAME: str(contract_id),
                                  IS_SMART_METER_ATTR_NAME: is_smart_meter,
                                  METER_ID_ATTR_NAME: None}
@@ -373,33 +374,34 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                             else:
                                 _LOGGER.debug("Failed fetching FutureConsumption, data in IEC API is corrupted")
 
-                    devices_by_id: Devices = await self._get_devices_by_device_id(device.device_number)
-                    last_meter_read = int(devices_by_id.counter_devices[0].last_mr)
-                    last_meter_read_date = devices_by_id.counter_devices[0].last_mr_date
-                    phase_count = devices_by_id.counter_devices[0].connection_size.phase
-                    connection_size = (devices_by_id.counter_devices[0].
-                                       connection_size.representative_connection_size)
+                    if not is_private_producer:
+                        devices_by_id: Devices = await self._get_devices_by_device_id(device.device_number)
+                        last_meter_read = int(devices_by_id.counter_devices[0].last_mr)
+                        last_meter_read_date = devices_by_id.counter_devices[0].last_mr_date
+                        phase_count = devices_by_id.counter_devices[0].connection_size.phase
+                        connection_size = (devices_by_id.counter_devices[0].
+                                        connection_size.representative_connection_size)
 
-                    distribution_tariff = await self._get_distribution_tariff(phase_count)
-                    delivery_tariff = await self._get_delivery_tariff(phase_count)
-                    power_size = await self._get_power_size(connection_size)
+                        distribution_tariff = await self._get_distribution_tariff(phase_count)
+                        delivery_tariff = await self._get_delivery_tariff(phase_count)
+                        power_size = await self._get_power_size(connection_size)
 
-                    estimated_bill, fixed_price, consumption_price, total_days, delivery_price, distribution_price, \
-                    total_kva_price, estimated_kwh_consumption = (
-                            self._calculate_estimated_bill(device.device_number, future_consumption,
-                                                        last_meter_read, last_meter_read_date,
-                                                        kwh_tariff, kva_tariff, distribution_tariff,
-                                                        delivery_tariff, power_size, last_invoice))
+                        estimated_bill, fixed_price, consumption_price, total_days, delivery_price, distribution_price, \
+                        total_kva_price, estimated_kwh_consumption = (
+                                self._calculate_estimated_bill(device.device_number, future_consumption,
+                                                            last_meter_read, last_meter_read_date,
+                                                            kwh_tariff, kva_tariff, distribution_tariff,
+                                                            delivery_tariff, power_size, last_invoice))
 
-                    estimated_bill_dict = {
-                        TOTAL_EST_BILL_ATTR_NAME: estimated_bill,
-                        EST_BILL_DAYS_ATTR_NAME: total_days,
-                        EST_BILL_CONSUMPTION_PRICE_ATTR_NAME: consumption_price,
-                        EST_BILL_DELIVERY_PRICE_ATTR_NAME: delivery_price,
-                        EST_BILL_DISTRIBUTION_PRICE_ATTR_NAME: distribution_price,
-                        EST_BILL_TOTAL_KVA_PRICE_ATTR_NAME: total_kva_price,
-                        EST_BILL_KWH_CONSUMPTION_ATTR_NAME: estimated_kwh_consumption
-                    }
+                        estimated_bill_dict = {
+                            TOTAL_EST_BILL_ATTR_NAME: estimated_bill,
+                            EST_BILL_DAYS_ATTR_NAME: total_days,
+                            EST_BILL_CONSUMPTION_PRICE_ATTR_NAME: consumption_price,
+                            EST_BILL_DELIVERY_PRICE_ATTR_NAME: delivery_price,
+                            EST_BILL_DISTRIBUTION_PRICE_ATTR_NAME: distribution_price,
+                            EST_BILL_TOTAL_KVA_PRICE_ATTR_NAME: total_kva_price,
+                            EST_BILL_KWH_CONSUMPTION_ATTR_NAME: estimated_kwh_consumption
+                        }
 
             data[str(contract_id)] = {CONTRACT_DICT_NAME: contracts.get(contract_id),
                                       INVOICE_DICT_NAME: last_invoice,
