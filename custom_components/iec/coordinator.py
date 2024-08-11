@@ -374,7 +374,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                             else:
                                 _LOGGER.debug("Failed fetching FutureConsumption, data in IEC API is corrupted")
 
-                    if not from_private_producer:
+                    if not is_private_producer:
                         devices_by_id: Devices = await self._get_devices_by_device_id(device.device_number)
                         last_meter_read = int(devices_by_id.counter_devices[0].last_mr)
                         last_meter_read_date = devices_by_id.counter_devices[0].last_mr_date
