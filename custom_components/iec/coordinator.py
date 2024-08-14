@@ -6,6 +6,7 @@ import socket
 from datetime import datetime, timedelta
 from typing import cast, Any  # noqa: UP035
 from collections import Counter
+from uuid import UUID
 
 import pytz
 from homeassistant.components.recorder import get_instance
@@ -26,6 +27,7 @@ from iec_api.models.contract import Contract
 from iec_api.models.device import Device, Devices
 from iec_api.models.exceptions import IECError
 from iec_api.models.jwt import JWT
+from iec_api.models.meter_reading import MeterReading
 from iec_api.models.remote_reading import ReadingResolution, RemoteReading, FutureConsumptionInfo, RemoteReadingResponse
 
 from .commons import find_reading_by_date
@@ -64,6 +66,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         self._entry_data = config_entry.data
         self._today_readings = {}
         self._devices_by_contract_id = {}
+        self._last_meter_reading = {}
         self._devices_by_meter_id = {}
         self._delivery_tariff_by_pahse = {}
         self._distribution_tariff_by_pahse = {}
@@ -71,6 +74,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         self._kwh_tariff: float | None = None
         self._kva_tariff: float | None = None
         self._readings = {}
+        self._account_id: str | None = None
+        self._connection_size: str | None = None
         self.api = IecClient(
             self._entry_data[CONF_USER_ID],
             session=aiohttp_client.async_get_clientsession(hass, family=socket.AF_INET)
@@ -107,6 +112,29 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 _LOGGER.exception(f"Failed fetching device details by meter id {meter_id}", e)
         return devices
 
+    async def _get_last_meter_reading(self, bp_number, contract_id, meter_id) -> MeterReading:
+        key = (contract_id, int(meter_id))
+        last_meter_reading = self._last_meter_reading.get(key)
+        if not last_meter_reading:
+            try:
+                meter_readings = await self.api.get_last_meter_reading(bp_number, contract_id)
+
+                for reading in meter_readings.last_meters:
+                    reading_meter_id = int(reading.serial_number)
+                    if len(reading.meter_readings) > 0:
+                        readings = reading.meter_readings
+                        readings.sort(key=lambda rdng: rdng.reading_date, reverse=True)
+                        last_meter_reading = readings[0]
+                        _LOGGER.debug(f"Last Reading for contract {contract_id}, Meter {reading_meter_id}: "
+                                      f"{last_meter_reading}")
+                        reading_key = (contract_id, reading_meter_id)
+                        self._last_meter_reading[reading_key] = last_meter_reading
+                    else:
+                        _LOGGER.debug(f"No Reading found for contract {contract_id}, Meter {reading_meter_id}")
+            except IECError as e:
+                _LOGGER.exception(f"Failed fetching device details by meter id {meter_id}", e)
+        return self._last_meter_reading.get(key)
+
     async def _get_kwh_tariff(self) -> float:
         if not self._kwh_tariff:
             try:
@@ -142,6 +170,23 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             except IECError as e:
                 _LOGGER.exception(f"Failed fetching Distribution Tariff by phase {phase}", e)
         return distribution_tariff or 0.0
+
+    async def _get_account_id(self) -> UUID | None:
+        if not self._account_id:
+            try:
+                account = await self.api.get_default_account()
+                self._account_id = account.id
+            except IECError as e:
+                _LOGGER.exception("Failed fetching Account", e)
+        return self._account_id
+
+    async def _get_connection_size(self, account_id) -> str | None:
+        if not self._connection_size:
+            try:
+                self._connection_size = await self.api.get_masa_connection_size_from_masa(account_id)
+            except IECError as e:
+                _LOGGER.exception("Failed fetching Masa Connection Size", e)
+        return self._connection_size
 
     async def _get_power_size(self, connection_size) -> float:
         power_size = self._power_size_by_connection_size.get(connection_size)
@@ -374,34 +419,46 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                             else:
                                 _LOGGER.debug("Failed fetching FutureConsumption, data in IEC API is corrupted")
 
-                    if not is_private_producer:
+                    if is_private_producer:
+                        last_meter_reading = await self._get_last_meter_reading(self._bp_number, contract_id,
+                                                                                device.device_number)
+                        last_meter_read = last_meter_reading.reading
+                        last_meter_read_date = last_meter_reading.reading_date.date()
+
+                        account_id = await self._get_account_id()
+                        connection_size = await self._get_connection_size(account_id)
+                        phase_count_str = connection_size.split("X")[0] \
+                            if connection_size.find("X") != -1 else "1"
+                        phase_count = int(phase_count_str)
+
+                    else:
                         devices_by_id: Devices = await self._get_devices_by_device_id(device.device_number)
-                        last_meter_read = int(devices_by_id.counter_devices[0].last_mr)
+                        last_meter_read = devices_by_id.counter_devices[0].last_mr
                         last_meter_read_date = devices_by_id.counter_devices[0].last_mr_date
                         phase_count = devices_by_id.counter_devices[0].connection_size.phase
                         connection_size = (devices_by_id.counter_devices[0].
-                                        connection_size.representative_connection_size)
+                                           connection_size.representative_connection_size)
 
-                        distribution_tariff = await self._get_distribution_tariff(phase_count)
-                        delivery_tariff = await self._get_delivery_tariff(phase_count)
-                        power_size = await self._get_power_size(connection_size)
+                    distribution_tariff = await self._get_distribution_tariff(phase_count)
+                    delivery_tariff = await self._get_delivery_tariff(phase_count)
+                    power_size = await self._get_power_size(connection_size)
 
-                        estimated_bill, fixed_price, consumption_price, total_days, delivery_price, distribution_price, \
+                    estimated_bill, fixed_price, consumption_price, total_days, delivery_price, distribution_price, \
                         total_kva_price, estimated_kwh_consumption = (
-                                self._calculate_estimated_bill(device.device_number, future_consumption,
-                                                            last_meter_read, last_meter_read_date,
-                                                            kwh_tariff, kva_tariff, distribution_tariff,
-                                                            delivery_tariff, power_size, last_invoice))
+                        self._calculate_estimated_bill(device.device_number, future_consumption,
+                                                       last_meter_read, last_meter_read_date,
+                                                       kwh_tariff, kva_tariff, distribution_tariff,
+                                                       delivery_tariff, power_size, last_invoice))
 
-                        estimated_bill_dict = {
-                            TOTAL_EST_BILL_ATTR_NAME: estimated_bill,
-                            EST_BILL_DAYS_ATTR_NAME: total_days,
-                            EST_BILL_CONSUMPTION_PRICE_ATTR_NAME: consumption_price,
-                            EST_BILL_DELIVERY_PRICE_ATTR_NAME: delivery_price,
-                            EST_BILL_DISTRIBUTION_PRICE_ATTR_NAME: distribution_price,
-                            EST_BILL_TOTAL_KVA_PRICE_ATTR_NAME: total_kva_price,
-                            EST_BILL_KWH_CONSUMPTION_ATTR_NAME: estimated_kwh_consumption
-                        }
+                    estimated_bill_dict = {
+                        TOTAL_EST_BILL_ATTR_NAME: estimated_bill,
+                        EST_BILL_DAYS_ATTR_NAME: total_days,
+                        EST_BILL_CONSUMPTION_PRICE_ATTR_NAME: consumption_price,
+                        EST_BILL_DELIVERY_PRICE_ATTR_NAME: delivery_price,
+                        EST_BILL_DISTRIBUTION_PRICE_ATTR_NAME: distribution_price,
+                        EST_BILL_TOTAL_KVA_PRICE_ATTR_NAME: total_kva_price,
+                        EST_BILL_KWH_CONSUMPTION_ATTR_NAME: estimated_kwh_consumption
+                    }
 
             data[str(contract_id)] = {CONTRACT_DICT_NAME: contracts.get(contract_id),
                                       INVOICE_DICT_NAME: last_invoice,
