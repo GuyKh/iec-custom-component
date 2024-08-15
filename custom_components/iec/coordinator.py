@@ -684,10 +684,10 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             total_days = today.day
             days_in_current_month = calendar.monthrange(today.year, today.month)[1]
 
-            consumption_price = round(future_consumption * kwh_tariff, 2)
-            total_kva_price = round(kva_price * total_days, 2)
-            distribution_price = round((distribution_tariff / days_in_current_month) * total_days, 2)
-            delivery_price = round((delivery_tariff / days_in_current_month) * total_days, 2)
+            consumption_price = future_consumption * kwh_tariff, 2
+            total_kva_price = kva_price * total_days, 2
+            distribution_price = (distribution_tariff / days_in_current_month) * total_days, 2
+            delivery_price = (delivery_tariff / days_in_current_month) * total_days
 
         _LOGGER.debug(f'Calculated estimated bill: No. of days: {total_days}, total KVA price: {total_kva_price}, '
                       f'total distribution price: {distribution_price}, total delivery price: {delivery_price}, '
@@ -695,5 +695,5 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
         fixed_price = round(total_kva_price + distribution_price + delivery_price, 2)
         total_estimated_bill = round(consumption_price + fixed_price, 2)
-        return total_estimated_bill, fixed_price, consumption_price, total_days, \
-            delivery_price, distribution_price, total_kva_price, future_consumption
+        return total_estimated_bill, fixed_price, round(consumption_price, 2), total_days, \
+            round(delivery_price, 2), round(distribution_price, 2), round(total_kva_price, 2), future_consumption
