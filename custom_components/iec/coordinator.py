@@ -433,7 +433,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
                     else:
                         devices_by_id: Devices = await self._get_devices_by_device_id(device.device_number)
-                        last_meter_read = devices_by_id.counter_devices[0].last_mr
+                        last_meter_read = int(devices_by_id.counter_devices[0].last_mr)
                         last_meter_read_date = devices_by_id.counter_devices[0].last_mr_date
                         phase_count = devices_by_id.counter_devices[0].connection_size.phase
                         connection_size = (devices_by_id.counter_devices[0].
@@ -657,7 +657,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         distribution_price = 0
         delivery_price = 0
 
-        consumption_price = future_consumption * kwh_tariff
+        consumption_price = round(future_consumption * kwh_tariff, 2)
         total_days = 0
 
         today = TIMEZONE.localize(datetime.today())
@@ -684,16 +684,16 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             total_days = today.day
             days_in_current_month = calendar.monthrange(today.year, today.month)[1]
 
-            consumption_price = future_consumption * kwh_tariff
-            total_kva_price = kva_price * total_days
-            distribution_price = (distribution_tariff / days_in_current_month) * total_days
+            consumption_price = future_consumption * kwh_tariff, 2
+            total_kva_price = kva_price * total_days, 2
+            distribution_price = (distribution_tariff / days_in_current_month) * total_days, 2
             delivery_price = (delivery_tariff / days_in_current_month) * total_days
 
         _LOGGER.debug(f'Calculated estimated bill: No. of days: {total_days}, total KVA price: {total_kva_price}, '
                       f'total distribution price: {distribution_price}, total delivery price: {delivery_price}, '
                       f'consumption price: {consumption_price}')
 
-        fixed_price = total_kva_price + distribution_price + delivery_price
-        total_estimated_bill = consumption_price + fixed_price
-        return total_estimated_bill, fixed_price, consumption_price, total_days, \
-            delivery_price, distribution_price, total_kva_price, future_consumption
+        fixed_price = round(total_kva_price + distribution_price + delivery_price, 2)
+        total_estimated_bill = round(consumption_price + fixed_price, 2)
+        return total_estimated_bill, fixed_price, round(consumption_price, 2), total_days, \
+            round(delivery_price, 2), round(distribution_price, 2), round(total_kva_price, 2), future_consumption
