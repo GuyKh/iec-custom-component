@@ -419,36 +419,10 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                             else:
                                 _LOGGER.debug("Failed fetching FutureConsumption, data in IEC API is corrupted")
 
-                    if is_private_producer:
-                        last_meter_reading = await self._get_last_meter_reading(self._bp_number, contract_id,
-                                                                                device.device_number)
-                        last_meter_read = last_meter_reading.reading
-                        last_meter_read_date = last_meter_reading.reading_date.date()
-
-                        account_id = await self._get_account_id()
-                        connection_size = await self._get_connection_size(account_id)
-                        phase_count_str = connection_size.split("X")[0] \
-                            if connection_size.find("X") != -1 else "1"
-                        phase_count = int(phase_count_str)
-
-                    else:
-                        devices_by_id: Devices = await self._get_devices_by_device_id(device.device_number)
-                        last_meter_read = int(devices_by_id.counter_devices[0].last_mr)
-                        last_meter_read_date = devices_by_id.counter_devices[0].last_mr_date
-                        phase_count = devices_by_id.counter_devices[0].connection_size.phase
-                        connection_size = (devices_by_id.counter_devices[0].
-                                           connection_size.representative_connection_size)
-
-                    distribution_tariff = await self._get_distribution_tariff(phase_count)
-                    delivery_tariff = await self._get_delivery_tariff(phase_count)
-                    power_size = await self._get_power_size(connection_size)
-
                     estimated_bill, fixed_price, consumption_price, total_days, delivery_price, distribution_price, \
-                        total_kva_price, estimated_kwh_consumption = (
-                        self._calculate_estimated_bill(device.device_number, future_consumption,
-                                                       last_meter_read, last_meter_read_date,
-                                                       kwh_tariff, kva_tariff, distribution_tariff,
-                                                       delivery_tariff, power_size, last_invoice))
+                        total_kva_price, estimated_kwh_consumption = await self._estimate_bill(contract_id, device.device_number,\
+                                                                                               is_private_producer, future_consumption,\
+                                                                                               kwh_tariff, kva_tariff, last_invoice)
 
                     estimated_bill_dict = {
                         TOTAL_EST_BILL_ATTR_NAME: estimated_bill,
@@ -643,6 +617,46 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             async_add_external_statistics(
                 self.hass, cost_metadata, cost_statistics
             )
+
+    async def _estimate_bill(self, contract_id, device_number, is_private_producer,\
+                            future_consumption, kwh_tariff, kva_tariff, last_invoice):
+        if not is_private_producer:
+            try:
+                devices_by_id: Devices = await self._get_devices_by_device_id(device_number)
+                last_meter_read = int(devices_by_id.counter_devices[0].last_mr)
+                last_meter_read_date = devices_by_id.counter_devices[0].last_mr_date
+                phase_count = devices_by_id.counter_devices[0].connection_size.phase
+                connection_size = (devices_by_id.counter_devices[0].
+                                    connection_size.representative_connection_size)
+            except Exception as e:
+                _LOGGER.warn("Failed to fetch data from devices_by_id, falling back to Masa API", e)
+                _LOGGER.debug(f"DevicesById Response: {devices_by_id}")
+                devices_by_id = None
+                last_meter_read = None
+                last_meter_read_date = None
+                phase_count = None
+                connection_size = None
+
+        if not is_private_producer or not last_meter_read:
+            last_meter_reading = await self._get_last_meter_reading(self._bp_number, contract_id,
+                                                                    device_number)
+            last_meter_read = last_meter_reading.reading
+            last_meter_read_date = last_meter_reading.reading_date.date()
+
+            account_id = await self._get_account_id()
+            connection_size = await self._get_connection_size(account_id)
+            phase_count_str = connection_size.split("X")[0] \
+                if connection_size.find("X") != -1 else "1"
+            phase_count = int(phase_count_str)
+
+        distribution_tariff = await self._get_distribution_tariff(phase_count)
+        delivery_tariff = await self._get_delivery_tariff(phase_count)
+        power_size = await self._get_power_size(connection_size)
+
+        return self._calculate_estimated_bill(device_number, future_consumption,
+                                              last_meter_read, last_meter_read_date,
+                                              kwh_tariff, kva_tariff, distribution_tariff,
+                                              delivery_tariff, power_size, last_invoice)
 
     @staticmethod
     def _calculate_estimated_bill(meter_id, future_consumptions: dict[str, FutureConsumptionInfo | None],
