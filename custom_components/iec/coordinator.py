@@ -3,7 +3,7 @@ import calendar
 import itertools
 import logging
 import socket
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from typing import cast, Any  # noqa: UP035
 from collections import Counter
 from uuid import UUID
@@ -68,8 +68,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         self._devices_by_contract_id = {}
         self._last_meter_reading = {}
         self._devices_by_meter_id = {}
-        self._delivery_tariff_by_pahse = {}
-        self._distribution_tariff_by_pahse = {}
+        self._delivery_tariff_by_phase = {}
+        self._distribution_tariff_by_phase = {}
         self._power_size_by_connection_size = {}
         self._kwh_tariff: float | None = None
         self._kva_tariff: float | None = None
@@ -152,21 +152,21 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         return self._kva_tariff or 0.0
 
     async def _get_delivery_tariff(self, phase) -> float:
-        delivery_tariff = self._delivery_tariff_by_pahse.get(phase)
+        delivery_tariff = self._delivery_tariff_by_phase.get(phase)
         if not delivery_tariff:
             try:
                 delivery_tariff = await self.api.get_delivery_tariff(phase)
-                self._delivery_tariff_by_pahse[phase] = delivery_tariff
+                self._delivery_tariff_by_phase[phase] = delivery_tariff
             except IECError as e:
                 _LOGGER.exception(f"Failed fetching Delivery Tariff by phase {phase}", e)
         return delivery_tariff or 0.0
 
     async def _get_distribution_tariff(self, phase) -> float:
-        distribution_tariff = self._distribution_tariff_by_pahse.get(phase)
+        distribution_tariff = self._distribution_tariff_by_phase.get(phase)
         if not distribution_tariff:
             try:
                 distribution_tariff = await self.api.get_distribution_tariff(phase)
-                self._distribution_tariff_by_pahse[phase] = distribution_tariff
+                self._distribution_tariff_by_phase[phase] = distribution_tariff
             except IECError as e:
                 _LOGGER.exception(f"Failed fetching Distribution Tariff by phase {phase}", e)
         return distribution_tariff or 0.0
@@ -198,28 +198,28 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 _LOGGER.exception(f"Failed fetching Power Size by Connection Size {connection_size}", e)
         return power_size or 0.0
 
-    async def _get_readings(self, contract_id: int, device_id: str | int, device_code: str | int, date: datetime,
+    async def _get_readings(self, contract_id: int, device_id: str | int, device_code: str | int, reading_date: datetime,
                             resolution: ReadingResolution):
 
-        date_key = date.strftime("%Y")
+        date_key = reading_date.strftime("%Y")
         match resolution:
             case ReadingResolution.DAILY:
-                date_key += date.strftime("-%m-%d")
+                date_key += reading_date.strftime("-%m-%d")
             case ReadingResolution.WEEKLY:
-                date_key += "/" + str(date.isocalendar().week)
+                date_key += "/" + str(reading_date.isocalendar().week)
             case ReadingResolution.MONTHLY:
-                date_key += date.strftime("-%m")
+                date_key += reading_date.strftime("-%m")
             case _:
                 _LOGGER.warning("Unexpected resolution value")
-                date_key += date.strftime("-%m-%d")
+                date_key += reading_date.strftime("-%m-%d")
 
         key = (contract_id, int(device_id), date_key)
         reading = self._readings.get(key)
         if not reading:
             try:
                 reading = await self.api.get_remote_reading(device_id, int(device_code),
-                                                            date,
-                                                            date,
+                                                            reading_date,
+                                                            reading_date,
                                                             resolution,
                                                             str(contract_id))
                 self._readings[key] = reading
@@ -420,8 +420,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                                 _LOGGER.debug("Failed fetching FutureConsumption, data in IEC API is corrupted")
 
                     estimated_bill, fixed_price, consumption_price, total_days, delivery_price, distribution_price, \
-                        total_kva_price, estimated_kwh_consumption = await self._estimate_bill(contract_id, device.device_number,\
-                                                                                               is_private_producer, future_consumption,\
+                        total_kva_price, estimated_kwh_consumption = await self._estimate_bill(contract_id, device.device_number,
+                                                                                               is_private_producer, future_consumption,
                                                                                                kwh_tariff, kva_tariff, last_invoice)
 
                     estimated_bill_dict = {
@@ -618,9 +618,14 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 self.hass, cost_metadata, cost_statistics
             )
 
-    async def _estimate_bill(self, contract_id, device_number, is_private_producer,\
-                            future_consumption, kwh_tariff, kva_tariff, last_invoice):
-        last_meter_read = None
+    async def _estimate_bill(self, contract_id, device_number, is_private_producer,
+                             future_consumption, kwh_tariff, kva_tariff, last_invoice):
+        last_meter_read: int | None = None
+        last_meter_read_date: date | None = None
+        phase_count: int | None = None
+        connection_size: str | None = None
+        devices_by_id: Devices | None = None
+
         if not is_private_producer:
             try:
                 devices_by_id: Devices = await self._get_devices_by_device_id(device_number)
@@ -630,9 +635,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 connection_size = (devices_by_id.counter_devices[0].
                                     connection_size.representative_connection_size)
             except Exception as e:
-                _LOGGER.warn("Failed to fetch data from devices_by_id, falling back to Masa API", e)
+                _LOGGER.warning("Failed to fetch data from devices_by_id, falling back to Masa API", e)
                 _LOGGER.debug(f"DevicesById Response: {devices_by_id}")
-                devices_by_id = None
                 last_meter_read = None
                 last_meter_read_date = None
                 phase_count = None
