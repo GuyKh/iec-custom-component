@@ -620,6 +620,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
     async def _estimate_bill(self, contract_id, device_number, is_private_producer,\
                             future_consumption, kwh_tariff, kva_tariff, last_invoice):
+        last_meter_read = None
         if not is_private_producer:
             try:
                 devices_by_id: Devices = await self._get_devices_by_device_id(device_number)
