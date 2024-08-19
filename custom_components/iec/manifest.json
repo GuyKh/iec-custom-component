@@ -11,5 +11,5 @@
   "issue_tracker": "https://github.com/guykh/iec-custom-component/issues",
   "loggers": ["iec_api"],
   "requirements": ["iec-api==0.4.1"],
-  "version": "0.0.31-fix"
+  "version": "0.0.32"
 }
