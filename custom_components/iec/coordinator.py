@@ -658,12 +658,15 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         if connection_size:
             power_size = await self._get_power_size(connection_size)
         else:
+            power_size = 0.0
             _LOGGER.warning("Couldn't get Connection Size")
 
         if phase_count:
             distribution_tariff = await self._get_distribution_tariff(phase_count)
             delivery_tariff = await self._get_delivery_tariff(phase_count)
         else:
+            distribution_tariff = 0.0
+            delivery_tariff = 0.0
             if connection_size:
                 _LOGGER.warning("Couldn't get Phase Count")
 
