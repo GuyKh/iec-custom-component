@@ -2,5 +2,40 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "config:recommended"
+  ],
+  "automerge": true,
+  "packageRules": [
+    {
+      "matchDatasources": ["pypi"],
+      "matchPackageNames": ["homeassistant"],
+      "enabled": false
+    },
+    {
+      "matchDatasources": ["pypi"],
+      "matchPaths": ["requirements.txt"],
+      "automerge": true
+    },
+    {
+      "matchPaths": ["custom_components/iec/manifest.json"],
+      "managers": ["json"],
+      "fileMatch": ["^custom_components/.+/manifest\\.json$"],
+      "extractVersion": {
+        "requirements": {
+          "regexManagers": [
+            {
+              "fileMatch": ["manifest\\.json$"],
+              "matchStrings": [
+                "\"requirements\": \\[(?<dep>[\"'][^\"']+[\"'])"
+              ],
+              "depNameTemplate": "{{dep}}",
+              "versioning": "semver",
+              "registryUrls": ["https://pypi.org/simple"]
+            }
+          ]
+        }
+      },
+      "registryUrls": ["https://pypi.org/simple"],
+      "automerge": true
+    }
   ]
 }
