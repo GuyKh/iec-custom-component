@@ -20,8 +20,8 @@
     {
       "customType": "regex",
       "fileMatch": ["^custom_components/.+/manifest\\.json$"],
-      "matchStrings": ["\"requirements\":\\s*\\[(\\s*\"(?<depName>[^\"]+)==(?<currentValue>(==|>=|<=)[0-9\\.]+)\"[,\\s]?)*\\]"],
-      "versioningTemplate": "semver",
+      "matchStrings": ["\"requirements\":\\s*\\[(\\s*\"(?<depName>[^\"]+)(?<currentValue>(==|>=|<=)[0-9\\.]+)\"[,\\s]?)*\\]"],
+      "versioningTemplate": "python",
       "depNameTemplate": "{{depName}}",
       "datasourceTemplate": "pypi"
     }
