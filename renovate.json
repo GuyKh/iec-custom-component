@@ -16,25 +16,20 @@
       "automerge": true
     },
     {
-      "matchPaths": ["custom_components/iec/manifest.json"],
-      "managers": ["json"],
-      "fileMatch": ["^custom_components/.+/manifest\\.json$"],
-      "extractVersion": {
-        "requirements": {
-          "regexManagers": [
-            {
-              "fileMatch": ["manifest\\.json$"],
-              "matchStrings": [
-                "\"requirements\": \\[(?<dep>[\"'][^\"']+[\"'])"
-              ],
-              "depNameTemplate": "{{dep}}",
-              "versioning": "semver",
-              "registryUrls": ["https://pypi.org/simple"]
-            }
-          ]
+      "matchPaths": ["custom_components/ims/manifest.json"],
+      "managers": ["regex"],
+      "regexManagers": [
+        {
+          "fileMatch": ["^custom_components/.+/manifest\\.json$"],
+          "matchStrings": [
+            "\"requirements\":\\s*\\[(?<dep>[\"'][^\"']+==(?<currentValue>\\d+\\.\\d+\\.\\d+(-\\w+)?)[\"'])"
+          ],
+          "depNameTemplate": "{{dep}}",
+          "versioning": "semver",
+          "datasourceTemplate": "pypi",
+          "registryUrls": ["https://pypi.org/simple"]
         }
-      },
-      "registryUrls": ["https://pypi.org/simple"],
+      ],
       "automerge": true
     }
   ]
