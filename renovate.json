@@ -22,12 +22,10 @@
         {
           "fileMatch": ["^custom_components/.+/manifest\\.json$"],
           "matchStrings": [
-            "\"requirements\":\\s*\\[(?<dep>[\"'][^\"']+==(?<currentValue>\\d+\\.\\d+\\.\\d+(-\\w+)?)[\"'])"
+            "\"requirements\":\\s*\\[(?<depName>\"[^\"]+==(?<currentValue>[^\"]+)\")"
           ],
-          "depNameTemplate": "{{dep}}",
-          "versioning": "semver",
-          "datasourceTemplate": "pypi",
-          "registryUrls": ["https://pypi.org/simple"]
+          "depNameTemplate": "{{depName}}",
+          "datasourceTemplate": "pypi"
         }
       ],
       "automerge": true
