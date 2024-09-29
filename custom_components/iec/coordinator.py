@@ -645,13 +645,13 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         if is_private_producer or not last_meter_read:
             last_meter_reading = await self._get_last_meter_reading(self._bp_number, contract_id,
                                                                     device_number)
-            
+
             if not last_meter_reading:
                 _LOGGER.warning("Couldn't get Last Meter Read, WILL NOT calculate the usage part in estimated bill.")
                 last_meter_read = None
                 last_meter_read_date = TIMEZONE.localize(datetime.today()).date()
                 last_invoice = EMPTY_INVOICE
-            else:    
+            else:
                 last_meter_read = last_meter_reading.reading
                 last_meter_read_date = last_meter_reading.reading_date.date()
 
