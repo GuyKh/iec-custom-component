@@ -680,7 +680,12 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                                   last_meter_read, last_meter_read_date, kwh_tariff,
                                   kva_tariff, distribution_tariff, delivery_tariff, power_size, last_invoice):
         future_consumption_info: FutureConsumptionInfo = future_consumptions[meter_id]
-        future_consumption = future_consumption_info.total_import - last_meter_read
+        future_consumption = 0
+
+        if last_meter_read:
+            future_consumption = future_consumption_info.total_import - last_meter_read
+        else:
+            _LOGGER.warning("Couldn't get Last Meter Read, WILL NOT calculate the usage part in estimated bill.")
 
         kva_price = power_size * kva_tariff / 365
 
