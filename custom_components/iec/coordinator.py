@@ -690,7 +690,12 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         future_consumption = 0
 
         if last_meter_read:
-            future_consumption = future_consumption_info.total_import - last_meter_read
+            if future_consumption_info.total_import:
+                future_consumption = future_consumption_info.total_import - last_meter_read
+            else:
+                _LOGGER.warn(f"Failed to calculate Future Consumption, Assuming last meter read \
+                    ({last_meter_read}) as full consumption")
+                future_consumption = last_meter_read
 
         kva_price = power_size * kva_tariff / 365
 
