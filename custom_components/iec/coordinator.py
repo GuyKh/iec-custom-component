@@ -350,7 +350,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     remote_reading = await self._get_readings(contract_id, device.device_number, device.device_code,
                                                               monthly_report_req_date,
                                                               ReadingResolution.MONTHLY)
-                    if remote_reading:
+                    if remote_reading and remote_reading.totalImport:   # use totalImport as validation that reading is OK
                         future_consumption[device.device_number] = remote_reading.future_consumption_info
 
                     if monthly_report_req_date.date() == localized_today.date():
@@ -370,7 +370,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                         remote_reading = await self._get_readings(contract_id, device.device_number, device.device_code,
                                                                   yesterday,
                                                                   ReadingResolution.WEEKLY)
-                        if remote_reading:
+                        if remote_reading and remote_reading.totalImport: # use totalImport as validation that reading OK
                             daily_readings[device.device_number] += remote_reading.data
                             weekly_future_consumption = remote_reading.future_consumption_info
 
@@ -414,7 +414,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                                                                             req_date,
                                                                             ReadingResolution.DAILY)
 
-                            if two_days_ago_reading:
+                            if two_days_ago_reading and two_days_ago_reading.totalImport: # use totalImport as validation that reading OK:
                                 future_consumption[device.device_number] = two_days_ago_reading.future_consumption_info
                             else:
                                 _LOGGER.debug("Failed fetching FutureConsumption, data in IEC API is corrupted")
