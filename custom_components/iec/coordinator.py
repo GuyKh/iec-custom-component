@@ -419,10 +419,20 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                             else:
                                 _LOGGER.debug("Failed fetching FutureConsumption, data in IEC API is corrupted")
 
-                    estimated_bill, fixed_price, consumption_price, total_days, delivery_price, distribution_price, \
-                        total_kva_price, estimated_kwh_consumption = await self._estimate_bill(contract_id, device.device_number,
+                    try:
+                        estimated_bill, fixed_price, consumption_price, total_days, delivery_price, distribution_price, \
+                            total_kva_price, estimated_kwh_consumption = await self._estimate_bill(contract_id, device.device_number,
                                                                                                is_private_producer, future_consumption,
                                                                                                kwh_tariff, kva_tariff, last_invoice)
+                    except Exception as e:
+                        _LOGGER.warn("Failed to calculate estimated next bill", e)
+                        estimated_bill = 0
+                        consumption_price = 0
+                        total_days = 0
+                        delivery_price = 0
+                        distribution_price = 0
+                        total_kva_price = 0
+                        estimated_kwh_consumption = 0
 
                     estimated_bill_dict = {
                         TOTAL_EST_BILL_ATTR_NAME: estimated_bill,
