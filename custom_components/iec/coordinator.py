@@ -639,11 +639,15 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         if not is_private_producer:
             try:
                 devices_by_id: Devices = await self._get_devices_by_device_id(device_number)
-                last_meter_read = int(devices_by_id.counter_devices[0].last_mr)
-                last_meter_read_date = devices_by_id.counter_devices[0].last_mr_date
-                phase_count = devices_by_id.counter_devices[0].connection_size.phase
-                connection_size = (devices_by_id.counter_devices[0].
-                                    connection_size.representative_connection_size)
+
+                if devices_by_id.counter_devices and len(devices_by_id.counter_devices) >= 1:
+                    last_meter_read = int(devices_by_id.counter_devices[0].last_mr)
+                    last_meter_read_date = devices_by_id.counter_devices[0].last_mr_date
+                    phase_count = devices_by_id.counter_devices[0].connection_size.phase
+                    connection_size = (devices_by_id.counter_devices[0].
+                                        connection_size.representative_connection_size)
+                else:
+                    _LOGGER.warning("Failed to get Last Device Meter Reading, trying another way...")
             except Exception as e:
                 _LOGGER.warning("Failed to fetch data from devices_by_id, falling back to Masa API", e)
                 _LOGGER.debug(f"DevicesById Response: {devices_by_id}")
