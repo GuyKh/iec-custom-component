@@ -1,4 +1,7 @@
 """IEC common functions."""
+
+import pytz
+
 from datetime import datetime
 from enum import Enum
 
@@ -6,6 +9,8 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from iec_api.models.remote_reading import RemoteReading
 
 from custom_components.iec import DOMAIN
+
+TIMEZONE = pytz.timezone("Asia/Jerusalem")
 
 
 def find_reading_by_date(daily_reading: RemoteReading, desired_date: datetime) -> bool:
@@ -24,9 +29,11 @@ def find_reading_by_date(daily_reading: RemoteReading, desired_date: datetime) -
         TypeError: If the `daily_reading.date` attribute is not of type `datetime`.
 
     """
-    return (daily_reading.date.year == desired_date.year and
-            daily_reading.date.month == desired_date.month and
-            daily_reading.date.day == desired_date.day)  # Checks if the dates match
+    return (
+        daily_reading.date.year == desired_date.year
+        and daily_reading.date.month == desired_date.month
+        and daily_reading.date.day == desired_date.day
+    )  # Checks if the dates match
 
 
 class IecEntityType(Enum):
@@ -37,8 +44,11 @@ class IecEntityType(Enum):
     METER = 3
 
 
-def get_device_info(contract_id: str, meter_id: str | None, iec_entity_type: IecEntityType = IecEntityType.GENERIC) \
-        -> DeviceInfo:
+def get_device_info(
+    contract_id: str,
+    meter_id: str | None,
+    iec_entity_type: IecEntityType = IecEntityType.GENERIC,
+) -> DeviceInfo:
     """Get device information based on contract ID and optional meter ID.
 
     Args:
@@ -64,7 +74,11 @@ def get_device_info(contract_id: str, meter_id: str | None, iec_entity_type: Iec
             model = "Contract: " + contract_id
             serial_number = ("Meter ID: " + meter_id) if meter_id else ""
 
-    identifier: str = contract_id + (("_" + meter_id) if (iec_entity_type == IecEntityType.METER and meter_id) else "")
+    identifier: str = contract_id + (
+        ("_" + meter_id)
+        if (iec_entity_type == IecEntityType.METER and meter_id)
+        else ""
+    )
     return DeviceInfo(
         identifiers={
             # Serial numbers are unique identifiers within a specific domain
