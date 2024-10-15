@@ -1,4 +1,5 @@
-""""Config flow for IEC integration."""
+"""Config flow for IEC integration."""
+
 from __future__ import annotations
 
 import logging
@@ -16,8 +17,14 @@ from iec_api.iec_client import IecClient
 from iec_api.models.exceptions import IECError
 from iec_api.models.jwt import JWT
 
-from .const import CONF_TOTP_SECRET, DOMAIN, CONF_USER_ID, CONF_BP_NUMBER, \
-    CONF_AVAILABLE_CONTRACTS, CONF_SELECTED_CONTRACTS
+from .const import (
+    CONF_TOTP_SECRET,
+    DOMAIN,
+    CONF_USER_ID,
+    CONF_BP_NUMBER,
+    CONF_AVAILABLE_CONTRACTS,
+    CONF_SELECTED_CONTRACTS,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -29,13 +36,15 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 
 
 async def _validate_login(
-        hass: HomeAssistant, login_data: dict[str, Any], api: IecClient
+    hass: HomeAssistant, login_data: dict[str, Any], api: IecClient
 ) -> dict[str, str]:
     """Validate login data and return any errors."""
     assert login_data is not None
     assert api is not None
     assert login_data.get(CONF_USER_ID) is not None
-    assert login_data.get(CONF_TOTP_SECRET) or login_data.get(CONF_API_TOKEN) is not None
+    assert (
+        login_data.get(CONF_TOTP_SECRET) or login_data.get(CONF_API_TOKEN) is not None
+    )
 
     if login_data.get(CONF_TOTP_SECRET):
         try:
@@ -70,7 +79,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.client: IecClient | None = None
 
     async def async_step_user(
-            self, user_input: dict[str, Any] | None = None
+        self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle the initial step."""
         errors: dict[str, str] = {}
@@ -85,7 +94,9 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             _LOGGER.debug(f"User input in step_user: {user_input}")
             self.data = user_input
             try:
-                self.client = IecClient(self.data[CONF_USER_ID], async_create_clientsession(self.hass))
+                self.client = IecClient(
+                    self.data[CONF_USER_ID], async_create_clientsession(self.hass)
+                )
             except ValueError as err:
                 errors["base"] = "invalid_id"
                 _LOGGER.error(f"Error while creating IEC client: {err}")
@@ -98,7 +109,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_mfa(
-            self, user_input: dict[str, Any] | None = None
+        self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle MFA step."""
         assert self.data is not None
@@ -120,7 +131,11 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 data[CONF_BP_NUMBER] = customer.bp_number
 
                 contracts = await client.get_contracts(customer.bp_number)
-                contract_ids = [int(contract.contract_id) for contract in contracts if contract.status == 1]
+                contract_ids = [
+                    int(contract.contract_id)
+                    for contract in contracts
+                    if contract.status == 1
+                ]
                 if len(contract_ids) == 1:
                     data[CONF_SELECTED_CONTRACTS] = [contract_ids[0]]
                     return self._async_create_iec_entry(data)
@@ -130,11 +145,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     return await self.async_step_select_contracts()
 
         if errors:
-            schema = {
-                vol.Required(
-                    CONF_USER_ID, default=self.data[CONF_USER_ID]
-                ): str
-            }
+            schema = {vol.Required(CONF_USER_ID, default=self.data[CONF_USER_ID]): str}
         else:
             schema = {}
 
@@ -156,7 +167,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_select_contracts(
-            self, user_input: dict[str, Any] | None = None
+        self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle Select Contract step."""
         assert self.data is not None
@@ -165,7 +176,10 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         assert self.data.get(CONF_BP_NUMBER) is not None
 
         errors: dict[str, str] = {}
-        if user_input is not None and user_input.get(CONF_SELECTED_CONTRACTS) is not None:
+        if (
+            user_input is not None
+            and user_input.get(CONF_SELECTED_CONTRACTS) is not None
+        ):
             if len(user_input.get(CONF_SELECTED_CONTRACTS)) == 0:
                 errors["base"] = "no_contracts"
             else:
@@ -177,9 +191,9 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return self._async_create_iec_entry(data)
 
         schema = {
-            vol.Required(CONF_SELECTED_CONTRACTS, default=self.data.get(CONF_AVAILABLE_CONTRACTS)): multi_select(
-                self.data.get(CONF_AVAILABLE_CONTRACTS)
-            )
+            vol.Required(
+                CONF_SELECTED_CONTRACTS, default=self.data.get(CONF_AVAILABLE_CONTRACTS)
+            ): multi_select(self.data.get(CONF_AVAILABLE_CONTRACTS))
         }
 
         return self.async_show_form(
@@ -196,7 +210,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(
-            self, user_input: dict[str, Any] | None = None
+        self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Dialog that informs the user that reauth is required."""
         assert self.reauth_entry
@@ -221,13 +235,17 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return self.async_abort(reason="reauth_successful")
 
         if not client:
-            self.client = IecClient(self.data[CONF_USER_ID], async_create_clientsession(self.hass))
+            self.client = IecClient(
+                self.data[CONF_USER_ID], async_create_clientsession(self.hass)
+            )
             client = self.client
 
         await client.login_with_id()
 
-        schema = {vol.Required(CONF_USER_ID): self.reauth_entry.data[CONF_USER_ID],
-                  vol.Required(CONF_TOTP_SECRET): str}
+        schema = {
+            vol.Required(CONF_USER_ID): self.reauth_entry.data[CONF_USER_ID],
+            vol.Required(CONF_TOTP_SECRET): str,
+        }
 
         return self.async_show_form(
             step_id="reauth_confirm",
