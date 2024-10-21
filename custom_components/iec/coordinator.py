@@ -585,24 +585,34 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                                     "Failed fetching FutureConsumption, data in IEC API is corrupted"
                                 )
 
-                    (
-                        estimated_bill,
-                        fixed_price,
-                        consumption_price,
-                        total_days,
-                        delivery_price,
-                        distribution_price,
-                        total_kva_price,
-                        estimated_kwh_consumption,
-                    ) = await self._estimate_bill(
-                        contract_id,
-                        device.device_number,
-                        is_private_producer,
-                        future_consumption,
-                        kwh_tariff,
-                        kva_tariff,
-                        last_invoice,
-                    )
+                    try:
+                      (
+                          estimated_bill,
+                          fixed_price,
+                          consumption_price,
+                          total_days,
+                          delivery_price,
+                          distribution_price,
+                          total_kva_price,
+                          estimated_kwh_consumption,
+                      ) = await self._estimate_bill(
+                          contract_id,
+                          device.device_number,
+                          is_private_producer,
+                          future_consumption,
+                          kwh_tariff,
+                          kva_tariff,
+                          last_invoice,
+                      )
+                    except Exception as e:
+                        _LOGGER.warn("Failed to calculate estimated next bill", e)
+                        estimated_bill = 0
+                        consumption_price = 0
+                        total_days = 0
+                        delivery_price = 0
+                        distribution_price = 0
+                        total_kva_price = 0
+                        estimated_kwh_consumption = 0
 
                     estimated_bill_dict = {
                         TOTAL_EST_BILL_ATTR_NAME: estimated_bill,
@@ -861,12 +871,17 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 devices_by_id: Devices = await self._get_devices_by_device_id(
                     device_number
                 )
-                last_meter_read = int(devices_by_id.counter_devices[0].last_mr)
-                last_meter_read_date = devices_by_id.counter_devices[0].last_mr_date
-                phase_count = devices_by_id.counter_devices[0].connection_size.phase
-                connection_size = devices_by_id.counter_devices[
-                    0
-                ].connection_size.representative_connection_size
+
+                if devices_by_id.counter_devices and len(devices_by_id.counter_devices) >= 1:
+                    last_meter_read = int(devices_by_id.counter_devices[0].last_mr)
+                    last_meter_read_date = devices_by_id.counter_devices[0].last_mr_date
+                    phase_count = devices_by_id.counter_devices[0].connection_size.phase
+                    connection_size = devices_by_id.counter_devices[
+                        0
+                    ].connection_size.representative_connection_size
+                else:
+                    _LOGGER.warning("Failed to get Last Device Meter Reading, trying another way...")
+
             except Exception as e:
                 _LOGGER.warning(
                     "Failed to fetch data from devices_by_id, falling back to Masa API",
