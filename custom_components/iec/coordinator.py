@@ -544,7 +544,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     )
 
                     # fallbacks for future consumption since IEC api is broken :/
-                    if not future_consumption[device.device_number].future_consumption:
+                    if not future_consumption[device.device_number] or \
+                        not future_consumption[device.device_number].future_consumption:
                         if (
                             weekly_future_consumption
                             and weekly_future_consumption.future_consumption
@@ -963,7 +964,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         future_consumption_info: FutureConsumptionInfo = future_consumptions[meter_id]
         future_consumption = 0
 
-        if last_meter_read:
+        if last_meter_read and future_consumption_info:
             if future_consumption_info.total_import:
                 future_consumption = (
                     future_consumption_info.total_import - last_meter_read
