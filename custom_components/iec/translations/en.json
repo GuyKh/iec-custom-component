@@ -57,6 +57,12 @@
       }
     }
   },
+  "services": {
+    "debug_get_coordinator_data": {
+      "name": "Get IEC Coordinator Data",
+      "description": "Fetch and return the coordinator data for debugging purposes."
+    }
+  },
   "config": {
     "step": {
       "user": {

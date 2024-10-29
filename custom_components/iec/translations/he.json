@@ -57,6 +57,12 @@
       }
     }
   },
+  "services": {
+    "debug_get_coordinator_data": {
+      "name": "הדפס מידע במערכת מחברת החשמל",
+      "description": "הדפס מידע שנטען מחב' חשמל לצורך ניפוי שגיאות"
+    }
+  },
   "config": {
     "step": {
       "user": {

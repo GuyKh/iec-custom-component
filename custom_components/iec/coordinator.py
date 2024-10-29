@@ -544,8 +544,12 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     )
 
                     # fallbacks for future consumption since IEC api is broken :/
-                    if not future_consumption[device.device_number] or \
-                        not future_consumption[device.device_number].future_consumption:
+                    if (
+                        not future_consumption[device.device_number]
+                        or not future_consumption[
+                            device.device_number
+                        ].future_consumption
+                    ):
                         if (
                             weekly_future_consumption
                             and weekly_future_consumption.future_consumption
@@ -587,24 +591,24 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                                 )
 
                     try:
-                      (
-                          estimated_bill,
-                          fixed_price,
-                          consumption_price,
-                          total_days,
-                          delivery_price,
-                          distribution_price,
-                          total_kva_price,
-                          estimated_kwh_consumption,
-                      ) = await self._estimate_bill(
-                          contract_id,
-                          device.device_number,
-                          is_private_producer,
-                          future_consumption,
-                          kwh_tariff,
-                          kva_tariff,
-                          last_invoice,
-                      )
+                        (
+                            estimated_bill,
+                            fixed_price,
+                            consumption_price,
+                            total_days,
+                            delivery_price,
+                            distribution_price,
+                            total_kva_price,
+                            estimated_kwh_consumption,
+                        ) = await self._estimate_bill(
+                            contract_id,
+                            device.device_number,
+                            is_private_producer,
+                            future_consumption,
+                            kwh_tariff,
+                            kva_tariff,
+                            last_invoice,
+                        )
                     except Exception as e:
                         _LOGGER.warn("Failed to calculate estimated next bill", e)
                         estimated_bill = 0
@@ -873,7 +877,10 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     device_number
                 )
 
-                if devices_by_id.counter_devices and len(devices_by_id.counter_devices) >= 1:
+                if (
+                    devices_by_id.counter_devices
+                    and len(devices_by_id.counter_devices) >= 1
+                ):
                     last_meter_read = int(devices_by_id.counter_devices[0].last_mr)
                     last_meter_read_date = devices_by_id.counter_devices[0].last_mr_date
                     phase_count = devices_by_id.counter_devices[0].connection_size.phase
@@ -881,7 +888,9 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                         0
                     ].connection_size.representative_connection_size
                 else:
-                    _LOGGER.warning("Failed to get Last Device Meter Reading, trying another way...")
+                    _LOGGER.warning(
+                        "Failed to get Last Device Meter Reading, trying another way..."
+                    )
 
             except Exception as e:
                 _LOGGER.warning(
