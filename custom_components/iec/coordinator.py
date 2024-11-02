@@ -283,7 +283,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             except IECError as e:
                 _LOGGER.exception(
                     f"Failed fetching reading for Contract: {contract_id},"
-                    f"date: {date.strftime('%d-%m-%Y')}, "
+                    f"date: {reading_date.strftime('%d-%m-%Y')}, "
                     f"resolution: {resolution}",
                     e,
                 )
