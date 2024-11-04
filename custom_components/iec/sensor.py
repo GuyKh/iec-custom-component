@@ -99,10 +99,12 @@ def _get_iec_type_by_class(description: IecEntityDescription) -> IecEntityType:
 
 
 def _get_reading_by_date(
-    readings: list[RemoteReading] | None, desired_date: datetime
+    readings: list[RemoteReading] | None, desired_datetime: datetime
 ) -> RemoteReading:
     if not readings:
         return EMPTY_REMOTE_READING
+
+    desired_date = desired_datetime.date()
     try:
         reading = next(
             reading
@@ -176,7 +178,7 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
             data[DAILY_READINGS_DICT_NAME][
                 data[ATTRIBUTES_DICT_NAME][METER_ID_ATTR_NAME]
             ],
-            TIMEZONE.localize(datetime.today()),
+            TIMEZONE.localize(datetime.now()),
         ).value
         if (
             data[DAILY_READINGS_DICT_NAME]
@@ -195,7 +197,7 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
                 data[DAILY_READINGS_DICT_NAME][
                     data[ATTRIBUTES_DICT_NAME][METER_ID_ATTR_NAME]
                 ],
-                TIMEZONE.localize(datetime.today()) - timedelta(days=1),
+                TIMEZONE.localize(datetime.now()) - timedelta(days=1),
             ).value
         )
         if (data[DAILY_READINGS_DICT_NAME])
@@ -214,7 +216,7 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
                     for reading in data[DAILY_READINGS_DICT_NAME][
                         data[ATTRIBUTES_DICT_NAME][METER_ID_ATTR_NAME]
                     ]
-                    if reading.date.month == TIMEZONE.localize(datetime.today()).month
+                    if reading.date.month == TIMEZONE.localize(datetime.now()).month
                 ]
             )
         )
