@@ -306,9 +306,9 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             _LOGGER.debug(
                 f'Daily reading for date: {desired_date.strftime("%Y-%m-%d")} is missing, calculating manually'
             )
-            daily_readings = prefetched_reading
-            if not daily_readings:
-                daily_readings = await self._get_readings(
+            readings = prefetched_reading
+            if not readings:
+                readings = await self._get_readings(
                     contract_id,
                     device.device_number,
                     device.device_code,
@@ -320,19 +320,21 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     f'Daily reading for date: {desired_date.strftime("%Y-%m-%d")} - using existing prefetched readings'
                 )
 
-            daily_sum = next(
+            desired_date_reading = next(
                 filter(
                     lambda reading: reading.date.date() == desired_date.date(),
-                    daily_readings,
+                    readings.data,
                 ),
                 0,
             )
-            if daily_sum <= 0:
+            if desired_date_reading.value <= 0:
                 _LOGGER.debug(
                     f'Couldn\'t find daily reading for: {desired_date.strftime("%Y-%m-%d")}'
                 )
             else:
-                daily_readings.append(RemoteReading(0, desired_date, daily_sum))
+                daily_readings.append(
+                    RemoteReading(0, desired_date, desired_date_reading.value)
+                )
         else:
             _LOGGER.debug(
                 f'Daily reading for date: {daily_reading.date.strftime("%Y-%m-%d")}'
