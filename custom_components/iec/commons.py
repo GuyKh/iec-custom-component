@@ -2,7 +2,7 @@
 
 import pytz
 
-from datetime import datetime
+from datetime import date
 from enum import Enum
 
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -13,7 +13,7 @@ from custom_components.iec import DOMAIN
 TIMEZONE = pytz.timezone("Asia/Jerusalem")
 
 
-def find_reading_by_date(daily_reading: RemoteReading, desired_date: datetime) -> bool:
+def find_reading_by_date(daily_reading: RemoteReading, desired_date: date) -> bool:
     """Search for a daily reading matching a specific date.
 
     Args:
@@ -29,11 +29,7 @@ def find_reading_by_date(daily_reading: RemoteReading, desired_date: datetime) -
         TypeError: If the `daily_reading.date` attribute is not of type `datetime`.
 
     """
-    return (
-        daily_reading.date.year == desired_date.year
-        and daily_reading.date.month == desired_date.month
-        and daily_reading.date.day == desired_date.day
-    )  # Checks if the dates match
+    return daily_reading.date.date() == desired_date  # Checks if the dates match
 
 
 class IecEntityType(Enum):
