@@ -327,7 +327,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 ),
                 0,
             )
-            if desired_date_reading.value <= 0:
+            if desired_date_reading == 0 or desired_date_reading.value <= 0:
                 _LOGGER.debug(
                     f'Couldn\'t find daily reading for: {desired_date.strftime("%Y-%m-%d")}'
                 )
