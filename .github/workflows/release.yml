@@ -1,35 +1,87 @@
-name: "Release"
+name: release
 
 on:
-  release:
-    types:
-      - "published"
+    push:
+        tags:
+            - "[0-9]+.[0-9]+.[0-9]+"
+            - "[0-9]+.[0-9]+.[0-9]+a[0-9]+"
+            - "[0-9]+.[0-9]+.[0-9]+b[0-9]+"
+            - "[0-9]+.[0-9]+.[0-9]+rc[0-9]+"
 
-permissions: {}
+env:
+    COMPONENT_NAME: "iec"
 
 jobs:
-  release:
-    name: "Release"
-    runs-on: "ubuntu-latest"
-    permissions:
-      contents: write
-    steps:
-      - name: "Checkout the repository"
-        uses: "actions/checkout@v4.2.2"
+    details:
+        runs-on: ubuntu-latest
+        outputs:
+            new_version: ${{ steps.release.outputs.new_version }}
+            suffix: ${{ steps.release.outputs.suffix }}
+            tag_name: ${{ steps.release.outputs.tag_name }}
+        steps:
+            - uses: actions/checkout@v2
 
-      - name: "Adjust version number"
-        shell: "bash"
-        run: |
-          yq -i -o json '.version="${{ github.event.release.tag_name }}"' \
-            "${{ github.workspace }}/custom_components/iec/manifest.json"
+            - name: Extract tag and Details
+              id: release
+              run: |
+                  if [ "${{ github.ref_type }}" = "tag" ]; then
+                    TAG_NAME=${GITHUB_REF#refs/tags/}
+                    NEW_VERSION=$(echo $TAG_NAME | awk -F'-' '{print $1}')
+                    SUFFIX=$(echo $TAG_NAME | grep -oP '[a-z]+[0-9]+' || echo "")
+                    echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+                    echo "suffix=$SUFFIX" >> "$GITHUB_OUTPUT"
+                    echo "tag_name=$TAG_NAME" >> "$GITHUB_OUTPUT"
+                    echo "Version is $NEW_VERSION"
+                    echo "Suffix is $SUFFIX"
+                    echo "Tag name is $TAG_NAME"
+                  else
+                    echo "No tag found"
+                    exit 1
+                  fi
 
-      - name: "ZIP the integration directory"
-        shell: "bash"
-        run: |
-          cd "${{ github.workspace }}/custom_components/iec"
-          zip iec.zip -r ./
+    check_manifest:
+        needs: details
+        runs-on: ubuntu-latest
+        steps:
+            - name: Fetch information from manifest.json
+              run: |
+                  latest_previous_version=$(jq '.version' "${{ github.workspace }}/custom_components/$COMPONENT_NAME/manifest.json")
+                  if [ -z "$latest_previous_version" ]; then
+                    echo "Package not found on manifest.json."
+                    latest_previous_version="0.0.0"
+                  fi
+                  echo "Latest version: $latest_previous_version"
+                  echo "latest_previous_version=$latest_previous_version" >> $GITHUB_ENV
 
-      - name: "Upload the ZIP file to the release"
-        uses: softprops/action-gh-release@v2.0.9
-        with:
-          files: ${{ github.workspace }}/custom_components/iec/iec.zip
+            - name: Compare versions and exit if not newer
+              run: |
+                  NEW_VERSION=${{ needs.details.outputs.new_version }}
+                  LATEST_VERSION=$latest_previous_version
+                  if [ "$(printf '%s\n' "$LATEST_VERSION" "$NEW_VERSION" | sort -rV | head -n 1)" != "$NEW_VERSION" ] || [ "$NEW_VERSION" == "$LATEST_VERSION" ]; then
+                    echo "The new version $NEW_VERSION is not greater than the latest version $LATEST_VERSION on manifest.json."
+                    exit 1
+                  else
+                    echo "The new version $NEW_VERSION is greater than the latest version $LATEST_VERSION on  on manifest.json."
+                  fi
+
+    setup_and_build:
+        needs: [details, check_manifest]
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v2
+
+            - name: Set version to manifest.json
+              run: |
+                  jq '.version="${{ needs.details.outputs.new_version }}"' "${{ github.workspace }}/custom_components/$COMPONENT_NAME/manifest.json" > "${{ github.workspace }}/custom_components/$COMPONENT_NAME/manifest.json.tmp"
+                  mv "${{ github.workspace }}/custom_components/iec/manifest.json.tmp" "${{ github.workspace }}/custom_components/$COMPONENT_NAME/manifest.json"
+
+            - name: "ZIP the integration directory"
+              shell: "bash"
+              run: |
+                  cd "${{ github.workspace }}/custom_components/$COMPONENT_NAME"
+                  zip $COMPONENT_NAME.zip -r ./
+
+            - name: "Upload the ZIP file to the release"
+              uses: softprops/action-gh-release@v2.0.9
+              with:
+                  files: ${{ github.workspace }}/custom_components/$COMPONENT_NAME/$COMPONENT_NAME.zip
