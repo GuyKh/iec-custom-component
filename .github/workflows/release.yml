@@ -19,7 +19,7 @@ jobs:
             suffix: ${{ steps.release.outputs.suffix }}
             tag_name: ${{ steps.release.outputs.tag_name }}
         steps:
-            - uses: actions/checkout@v2
+            - uses: actions/checkout@v4
 
             - name: Extract tag and Details
               id: release
@@ -68,7 +68,7 @@ jobs:
         needs: [details, check_manifest]
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@v2
+            - uses: actions/checkout@v4
 
             - name: Set version to manifest.json
               run: |
