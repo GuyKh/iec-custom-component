@@ -469,7 +469,16 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                             remote_reading.future_consumption_info
                         )
 
-                    daily_readings[device.device_number] = remote_reading.data
+                    if remote_reading and remote_reading.data:
+                        daily_readings[device.device_number] = remote_reading.data
+                    else:
+                        _LOGGER.warning(
+                            "No Monthly readings returned for device %s in contract %s on %s",
+                            device.device_number,
+                            contract_id,
+                            localized_today.strftime("%Y-%m-%d"),
+                        )
+                        daily_readings[device.device_number] = []
 
                     weekly_future_consumption = None
                     if localized_today.day == 1:
