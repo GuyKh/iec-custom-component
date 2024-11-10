@@ -1,106 +1,105 @@
 {
-  "entity": {
-    "binary_sensor": {
-      "last_iec_invoice_paid": {
-        "name": "Is last invoice {multi_contract} paid"
-      }
+    "entity": {
+        "binary_sensor": {
+            "last_iec_invoice_paid": {
+                "name": "Is last invoice {multi_contract} paid"
+            }
+        },
+        "sensor": {
+            "elec_forecasted_usage": {
+                "name": "Next electric bill forecasted usage {multi_contract}"
+            },
+            "elec_forecasted_cost": {
+                "name": "Next electric bill forecasted cost {multi_contract}",
+                "state_attributes": {
+                    "total_bill_days": { "name": "Total Bill Days" },
+                    "consumption_price": { "name": "Consumption Price" },
+                    "delivery_price": { "name": "Delivery Price" },
+                    "distribution_price": { "name": "Distribution Price" },
+                    "total_kva_price": { "name": "Total KVA Price" }
+                }
+            },
+            "elec_today_consumption": {
+                "name": "Today electric consumption {multi_contract}"
+            },
+            "elec_yesterday_consumption": {
+                "name": "Yesterday electric consumption {multi_contract}"
+            },
+            "elec_this_month_consumption": {
+                "name": "This month electric consumption {multi_contract}"
+            },
+            "elec_latest_meter_reading": {
+                "name": "Latest meter reading {multi_contract}"
+            },
+            "iec_last_elec_usage": {
+                "name": "Last bill electric usage to date {multi_contract}"
+            },
+            "iec_last_cost": {
+                "name": "Last bill electric cost {multi_contract}"
+            },
+            "iec_last_bill_remain_to_pay": {
+                "name": "Last bill amount to pay {multi_contract}"
+            },
+            "iec_last_number_of_days": {
+                "name": "Last bill length in days {multi_contract}"
+            },
+            "iec_bill_date": {
+                "name": "Last bill date {multi_contract}"
+            },
+            "iec_bill_last_payment_date": {
+                "name": "Last bill payment date {multi_contract}"
+            },
+            "iec_last_meter_reading": {
+                "name": "Last bill meter reading {multi_contract}"
+            },
+            "iec_kwh_tariff": {
+                "name": "kWh tariff"
+            }
+        }
     },
-    "sensor": {
-      "elec_forecasted_usage": {
-        "name": "Next electric bill forecasted usage {multi_contract}"
-      },
-      "elec_forecasted_cost": {
-        "name": "Next electric bill forecasted cost {multi_contract}",
-        "state_attributes": {
-          "total_bill_days": { "name": "Total Bill Days" },
-          "consumption_price": { "name": "Consumption Price" },
-          "delivery_price": { "name": "Delivery Price" },
-          "distribution_price": { "name": "Distribution Price" },
-          "total_kva_price": { "name": "Total KVA Price" }
+    "services": {
+        "debug_get_coordinator_data": {
+            "name": "Get IEC Coordinator Data",
+            "description": "Fetch and return the coordinator data for debugging purposes."
         }
-      },
-      "elec_today_consumption": {
-        "name": "Today electric consumption {multi_contract}"
-      },
-      "elec_yesterday_consumption": {
-        "name": "Yesterday electric consumption {multi_contract}"
-      },
-      "elec_this_month_consumption": {
-        "name": "This month electric consumption {multi_contract}"
-      },
-      "elec_latest_meter_reading": {
-        "name": "Latest meter reading {multi_contract}"
-      },
-      "iec_last_elec_usage": {
-        "name": "Last bill electric usage to date {multi_contract}"
-      },
-      "iec_last_cost": {
-        "name": "Last bill electric cost {multi_contract}"
-      },
-      "iec_last_bill_remain_to_pay": {
-        "name": "Last bill amount to pay {multi_contract}"
-      },
-      "iec_last_number_of_days": {
-        "name": "Last bill length in days {multi_contract}"
-      },
-      "iec_bill_date": {
-        "name": "Last bill date {multi_contract}"
-      },
-      "iec_bill_last_payment_date": {
-        "name": "Last bill payment date {multi_contract}"
-      },
-      "iec_last_meter_reading": {
-        "name": "Last bill meter reading {multi_contract}"
-      },
-      "iec_kwh_tariff": {
-        "name": "kWh tariff"
-      }
-    }
-  },
-  "services": {
-    "debug_get_coordinator_data": {
-      "name": "Get IEC Coordinator Data",
-      "description": "Fetch and return the coordinator data for debugging purposes."
-    }
-  },
-  "config": {
-    "step": {
-      "user": {
-        "title": "Account ID",
-        "description": "Enter your User ID (תעודת זהות)",
-        "data": {
-          "user_id": "User ID"
-        }
-      },
-      "mfa": {
-        "title": "OTP",
-        "description": "Enter your One Time Password (OTP)",
-        "data": {
-          "totp_secret": "e.g. 123456"
-        }
-      },
-      "select_contracts": {
-        "title": "Select Contract",
-        "description": "Select which contract to use"
-      },
-      "reauth_confirm": {
-        "title": "[%key:common::config_flow::title::reauth%]",
-        "data": {
-          "user_id": "User ID",
-          "totp_secret": "e.g. 123456"
-        }
-      }
     },
-    "error": {
-      "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
-      "invalid_auth": "[%key:common::config_flow::error::invalid_auth%]",
-      "invalid_id": "Invalid Israeli ID",
-      "no_contract": "You should select at least one contract"
-
-    },
-    "abort": {
-      "already_configured": "[%key:common::config_flow::abort::already_configured_service%]",
-      "reauth_successful": "[%key:common::config_flow::abort::reauth_successful%]"
+    "config": {
+        "step": {
+            "user": {
+                "title": "Account ID",
+                "description": "Enter your User ID (תעודת זהות)",
+                "data": {
+                    "user_id": "User ID"
+                }
+            },
+            "mfa": {
+                "title": "OTP",
+                "description": "Enter your One Time Password (OTP)",
+                "data": {
+                    "totp_secret": "e.g. 123456"
+                }
+            },
+            "select_contracts": {
+                "title": "Select Contract",
+                "description": "Select which contract to use"
+            },
+            "reauth_confirm": {
+                "title": "[%key:common::config_flow::title::reauth%]",
+                "data": {
+                    "user_id": "User ID",
+                    "totp_secret": "e.g. 123456"
+                }
+            }
+        },
+        "error": {
+            "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
+            "invalid_auth": "[%key:common::config_flow::error::invalid_auth%]",
+            "invalid_id": "Invalid Israeli ID",
+            "no_contracts": "You should select at least one contract"
+        },
+        "abort": {
+            "already_configured": "[%key:common::config_flow::abort::already_configured_service%]",
+            "reauth_successful": "[%key:common::config_flow::abort::reauth_successful%]"
+        }
     }
-  }
 }

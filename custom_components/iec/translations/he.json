@@ -1,105 +1,105 @@
 {
-  "entity": {
-    "binary_sensor": {
-      "last_iec_invoice_paid": {
-        "name": "האם שולמה חשבונית אחרונה {multi_contract}"
-      }
+    "entity": {
+        "binary_sensor": {
+            "last_iec_invoice_paid": {
+                "name": "האם שולמה חשבונית אחרונה {multi_contract}"
+            }
+        },
+        "sensor": {
+            "elec_forecasted_usage": {
+                "name": "סך צריכת החשמל בחשבונית הבאה {multi_contract}"
+            },
+            "elec_forecasted_cost": {
+                "name": "סך עלות צריכת החשמל בחשבונית הבאה {multi_contract}",
+                "state_attributes": {
+                    "total_bill_days": { "name": "מס׳ ימים לחיוב" },
+                    "consumption_price": { "name": "עלות צריכה" },
+                    "delivery_price": { "name": "עלות אספקה" },
+                    "distribution_price": { "name": "עלות חלוקה" },
+                    "total_kva_price": { "name": "עלות קיבולת לKVA" }
+                }
+            },
+            "elec_today_consumption": {
+                "name": "סך צריכת החשמל היום {multi_contract}"
+            },
+            "elec_yesterday_consumption": {
+                "name": "סך צריכת החשמל אתמול {multi_contract}"
+            },
+            "elec_this_month_consumption": {
+                "name": "סך צריכת החשמל החודש {multi_contract}"
+            },
+            "elec_latest_meter_reading": {
+                "name": "קריאת מונה אחרונה {multi_contract}"
+            },
+            "iec_last_elec_usage": {
+                "name": "סך צריכת החשמל בחשבונית האחרונה {multi_contract}"
+            },
+            "iec_last_cost": {
+                "name": "סכום החיוב מהחשבונית האחרונה {multi_contract}"
+            },
+            "iec_last_bill_remain_to_pay": {
+                "name": "סכום החיוב הנותר לתשלום מהחשבונית האחרונה {multi_contract}"
+            },
+            "iec_last_number_of_days": {
+                "name": "משך הזמן בחשבונית האחרונה {multi_contract}"
+            },
+            "iec_bill_date": {
+                "name": "תאריך חיוב לחשבונית האחרונה {multi_contract}"
+            },
+            "iec_bill_last_payment_date": {
+                "name": "תאריך אחרון לתשלום החשבונית האחרונה {multi_contract}"
+            },
+            "iec_last_meter_reading": {
+                "name": "קריאת מונה מהחשבונית האחרונה {multi_contract}"
+            },
+            "iec_kwh_tariff": {
+                "name": "תעריף החשמל הביתי לקוט\"ש"
+            }
+        }
     },
-    "sensor": {
-      "elec_forecasted_usage": {
-        "name": "סך צריכת החשמל בחשבונית הבאה {multi_contract}"
-      },
-      "elec_forecasted_cost": {
-        "name": "סך עלות צריכת החשמל בחשבונית הבאה {multi_contract}",
-        "state_attributes": {
-          "total_bill_days": { "name": "מס׳ ימים לחיוב" },
-          "consumption_price": { "name": "עלות צריכה" },
-          "delivery_price": { "name": "עלות אספקה" },
-          "distribution_price": { "name": "עלות חלוקה" },
-          "total_kva_price": { "name": "עלות קיבולת לKVA" }
+    "services": {
+        "debug_get_coordinator_data": {
+            "name": "הדפס מידע במערכת מחברת החשמל",
+            "description": "הדפס מידע שנטען מחב' חשמל לצורך ניפוי שגיאות"
         }
-      },
-      "elec_today_consumption": {
-        "name": "סך צריכת החשמל היום {multi_contract}"
-      },
-      "elec_yesterday_consumption": {
-        "name": "סך צריכת החשמל אתמול {multi_contract}"
-      },
-      "elec_this_month_consumption": {
-        "name": "סך צריכת החשמל החודש {multi_contract}"
-      },
-      "elec_latest_meter_reading": {
-        "name": "קריאת מונה אחרונה {multi_contract}"
-      },
-      "iec_last_elec_usage": {
-        "name": "סך צריכת החשמל בחשבונית האחרונה {multi_contract}"
-      },
-      "iec_last_cost": {
-        "name": "סכום החיוב מהחשבונית האחרונה {multi_contract}"
-      },
-      "iec_last_bill_remain_to_pay": {
-        "name": "סכום החיוב הנותר לתשלום מהחשבונית האחרונה {multi_contract}"
-      },
-      "iec_last_number_of_days": {
-        "name": "משך הזמן בחשבונית האחרונה {multi_contract}"
-      },
-      "iec_bill_date": {
-        "name": "תאריך חיוב לחשבונית האחרונה {multi_contract}"
-      },
-      "iec_bill_last_payment_date": {
-        "name": "תאריך אחרון לתשלום החשבונית האחרונה {multi_contract}"
-      },
-      "iec_last_meter_reading": {
-        "name": "קריאת מונה מהחשבונית האחרונה {multi_contract}"
-      },
-      "iec_kwh_tariff": {
-        "name": "תעריף החשמל הביתי לקוט\"ש"
-      }
-    }
-  },
-  "services": {
-    "debug_get_coordinator_data": {
-      "name": "הדפס מידע במערכת מחברת החשמל",
-      "description": "הדפס מידע שנטען מחב' חשמל לצורך ניפוי שגיאות"
-    }
-  },
-  "config": {
-    "step": {
-      "user": {
-        "title": "מזהה לקוח חברת החשמל",
-        "description": "הכניסו את מזהה הלקוח (תעודת זהות)",
-        "data": {
-          "user_id": "מזהה הלקוח (תעודת זהות)"
-        }
-      },
-      "mfa": {
-        "title": "OTP",
-        "description": "הכניסו את הקוד החד-פעמי שנשלח אליכם (OTP)",
-        "data": {
-          "totp_secret": "לדוג' 123456"
-        }
-      },
-      "select_contracts": {
-        "title": "בחירת חשבון חוזה",
-        "description": "בחרו באיזה חשבון חוזה להשתמש"
-      },
-      "reauth_confirm": {
-        "title": "[%key:common::config_flow::title::reauth%]",
-        "data": {
-          "user_id": "מזהה לקוח",
-          "totp_secret": "לדוג' 123456"
-        }
-      }
     },
-    "error": {
-      "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
-      "invalid_auth": "[%key:common::config_flow::error::invalid_auth%]",
-      "invalid_id": "תעודת זהות לא תקנית",
-      "no_contract": "נא לבחור לפחות חוזה אחד"
-    },
-    "abort": {
-      "already_configured": "[%key:common::config_flow::abort::already_configured_service%]",
-      "reauth_successful": "[%key:common::config_flow::abort::reauth_successful%]"
+    "config": {
+        "step": {
+            "user": {
+                "title": "מזהה לקוח חברת החשמל",
+                "description": "הכניסו את מזהה הלקוח (תעודת זהות)",
+                "data": {
+                    "user_id": "מזהה הלקוח (תעודת זהות)"
+                }
+            },
+            "mfa": {
+                "title": "OTP",
+                "description": "הכניסו את הקוד החד-פעמי שנשלח אליכם (OTP)",
+                "data": {
+                    "totp_secret": "לדוג' 123456"
+                }
+            },
+            "select_contracts": {
+                "title": "בחירת חשבון חוזה",
+                "description": "בחרו באיזה חשבון חוזה להשתמש"
+            },
+            "reauth_confirm": {
+                "title": "[%key:common::config_flow::title::reauth%]",
+                "data": {
+                    "user_id": "מזהה לקוח",
+                    "totp_secret": "לדוג' 123456"
+                }
+            }
+        },
+        "error": {
+            "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
+            "invalid_auth": "[%key:common::config_flow::error::invalid_auth%]",
+            "invalid_id": "תעודת זהות לא תקנית",
+            "no_contracts": "נא לבחור לפחות חוזה אחד"
+        },
+        "abort": {
+            "already_configured": "[%key:common::config_flow::abort::already_configured_service%]",
+            "reauth_successful": "[%key:common::config_flow::abort::reauth_successful%]"
+        }
     }
-  }
 }
