@@ -668,7 +668,26 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             )
 
             if not last_stat:
+                _LOGGER.debug(
+                    "No statistics found, fetching today's MONTHLY readings to extract field `meterStartDate`"
+                )
+
                 month_ago_time = localized_today - timedelta(weeks=4)
+                readings = await self._get_readings(
+                    contract_id,
+                    device.device_number,
+                    device.device_code,
+                    localized_today,
+                    ReadingResolution.MONTHLY,
+                )
+
+                if readings and readings.meter_start_date:
+                    # Fetching the last reading from either the installation date or a month ago
+                    month_ago_time = max(month_ago_time, readings.meter_start_date)
+                else:
+                    _LOGGER.debug(
+                        "Failed to extract field `meterStartDate`, falling back to a month ago"
+                    )
 
                 _LOGGER.debug("Updating statistic for the first time")
                 _LOGGER.debug(
