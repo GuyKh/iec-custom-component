@@ -194,6 +194,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             try:
                 self._kva_tariff = await self.api.get_kva_tariff()
             except IECError as e:
+                _LOGGER.exception("Failed fetching KVA Tariff from IEC API", e)
+            except Exception as e:
                 _LOGGER.exception("Failed fetching KVA Tariff", e)
         return self._kva_tariff or 0.0
 
