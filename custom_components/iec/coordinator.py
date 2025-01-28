@@ -454,7 +454,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
                 devices = await self._get_devices_by_contract_id(contract_id)
                 if not devices:
-                    _LOGGER.debug(f"No devices for contract {contract_id}")
+                    _LOGGER.debug(f"No devices for contract {contract_id}. Skipping creating devices.")
+                    continue
 
                 for device in devices or []:
                     attributes_to_add[METER_ID_ATTR_NAME] = device.device_number
