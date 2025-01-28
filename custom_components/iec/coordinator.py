@@ -453,8 +453,10 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 # So instead of sending the 1st day of the month, just sending today date
 
                 devices = await self._get_devices_by_contract_id(contract_id)
+                if not devices:
+                    _LOGGER.debug(f"No devices for contract {contract_id}")
 
-                for device in devices:
+                for device in devices or []:
                     attributes_to_add[METER_ID_ATTR_NAME] = device.device_number
 
                     reading_type: ReadingResolution | None = None
