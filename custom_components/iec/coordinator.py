@@ -705,7 +705,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
                 if readings and readings.meter_start_date:
                     # Fetching the last reading from either the installation date or a month ago
-                    month_ago_time = max(month_ago_time, readings.meter_start_date)
+                    month_ago_time = max(month_ago_time, datetime.combine(readings.meter_start_date, datetime.min.time()))
                 else:
                     _LOGGER.debug(
                         "[IEC Statistics] Failed to extract field `meterStartDate`, falling back to a month ago"
