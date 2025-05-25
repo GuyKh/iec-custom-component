@@ -81,7 +81,10 @@
             },
             "select_contracts": {
                 "title": "Select Contract",
-                "description": "Select which contract to use"
+                "description": "Select which contract to use",
+                "data": {
+                    "no_contracts": "No Contracts Found"
+                }
             },
             "reauth_confirm": {
                 "title": "[%key:common::config_flow::title::reauth%]",
@@ -95,7 +98,8 @@
             "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
             "invalid_auth": "[%key:common::config_flow::error::invalid_auth%]",
             "invalid_id": "Invalid Israeli ID",
-            "no_contracts": "You should select at least one contract"
+            "no_selected_contracts": "You should select at least one contract",
+            "no_contracts": "No Contracts Found"
         },
         "abort": {
             "already_configured": "[%key:common::config_flow::abort::already_configured_service%]",
