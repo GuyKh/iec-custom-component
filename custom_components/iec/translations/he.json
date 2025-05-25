@@ -81,7 +81,10 @@
             },
             "select_contracts": {
                 "title": "בחירת חשבון חוזה",
-                "description": "בחרו באיזה חשבון חוזה להשתמש"
+                "description": "בחרו באיזה חשבון חוזה להשתמש",
+                "data": {
+                    "no_contracts": "לא נמצאו חשבונות חוזה"
+                }
             },
             "reauth_confirm": {
                 "title": "[%key:common::config_flow::title::reauth%]",
@@ -95,7 +98,8 @@
             "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
             "invalid_auth": "[%key:common::config_flow::error::invalid_auth%]",
             "invalid_id": "תעודת זהות לא תקנית",
-            "no_contracts": "נא לבחור לפחות חוזה אחד"
+            "no_selected_contracts": "נא לבחור לפחות חוזה אחד",
+            "no_contracts": "לא נמצאו חוזים"
         },
         "abort": {
             "already_configured": "[%key:common::config_flow::abort::already_configured_service%]",

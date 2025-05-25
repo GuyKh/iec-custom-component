@@ -317,7 +317,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         )
         if not daily_reading:
             _LOGGER.debug(
-                f'Daily reading for date: {desired_date.strftime("%Y-%m-%d")} is missing, calculating manually'
+                f"Daily reading for date: {desired_date.strftime('%Y-%m-%d')} is missing, calculating manually"
             )
             readings = prefetched_reading
             if not readings:
@@ -330,7 +330,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 )
             else:
                 _LOGGER.debug(
-                    f'Daily reading for date: {desired_date.strftime("%Y-%m-%d")} - using existing prefetched readings'
+                    f"Daily reading for date: {desired_date.strftime('%Y-%m-%d')} - using existing prefetched readings"
                 )
 
             if readings and readings.data:
@@ -353,7 +353,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 )
                 if desired_date_reading is None or desired_date_reading.value <= 0:
                     _LOGGER.debug(
-                        f'Couldn\'t find daily reading for: {desired_date.strftime("%Y-%m-%d")}'
+                        f"Couldn't find daily reading for: {desired_date.strftime('%Y-%m-%d')}"
                     )
                 else:
                     daily_readings[device.device_number].append(
@@ -361,8 +361,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     )
         else:
             _LOGGER.debug(
-                f'Daily reading for date: {daily_reading.date.strftime("%Y-%m-%d")}'
-                f' is present: {daily_reading.value}'
+                f"Daily reading for date: {daily_reading.date.strftime('%Y-%m-%d')}"
+                f" is present: {daily_reading.value}"
             )
 
     async def _update_data(
@@ -454,7 +454,9 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
                 devices = await self._get_devices_by_contract_id(contract_id)
                 if not devices:
-                    _LOGGER.debug(f"No devices for contract {contract_id}. Skipping creating devices.")
+                    _LOGGER.debug(
+                        f"No devices for contract {contract_id}. Skipping creating devices."
+                    )
                     continue
 
                 for device in devices or []:
@@ -589,7 +591,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                             last_invoice,
                         )
                     except Exception as e:
-                        _LOGGER.warn("Failed to calculate estimated next bill", e)
+                        _LOGGER.warning("Failed to calculate estimated next bill", e)
                         estimated_bill = 0
                         consumption_price = 0
                         total_days = 0
@@ -705,7 +707,14 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
                 if readings and readings.meter_start_date:
                     # Fetching the last reading from either the installation date or a month ago
-                    month_ago_time = max(month_ago_time, TIMEZONE.localize(datetime.combine(readings.meter_start_date, datetime.min.time())))
+                    month_ago_time = max(
+                        month_ago_time,
+                        TIMEZONE.localize(
+                            datetime.combine(
+                                readings.meter_start_date, datetime.min.time()
+                            )
+                        ),
+                    )
                 else:
                     _LOGGER.debug(
                         "[IEC Statistics] Failed to extract field `meterStartDate`, falling back to a month ago"
@@ -1016,8 +1025,10 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     future_consumption_info.total_import - last_meter_read
                 )
             else:
-                _LOGGER.warn(f"Failed to calculate Future Consumption, Assuming last meter read \
-                    ({last_meter_read}) as full consumption")
+                _LOGGER.warning(
+                    f"Failed to calculate Future Consumption, Assuming last meter read \
+                    ({last_meter_read}) as full consumption"
+                )
                 future_consumption = last_meter_read
 
         kva_price = power_size * kva_tariff / 365
