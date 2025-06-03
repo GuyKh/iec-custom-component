@@ -20,6 +20,7 @@ from .const import (
     DOMAIN,
     STATICS_DICT_NAME,
     INVOICE_DICT_NAME,
+    JWT_DICT_NAME,
     EMPTY_INVOICE,
     ATTRIBUTES_DICT_NAME,
     METER_ID_ATTR_NAME,
@@ -67,7 +68,8 @@ async def async_setup_entry(
         len(
             list(
                 filter(
-                    lambda key: key != STATICS_DICT_NAME, list(coordinator.data.keys())
+                    lambda key: key not in (STATICS_DICT_NAME, JWT_DICT_NAME),
+                    list(coordinator.data.keys()),
                 )
             )
         )
@@ -76,7 +78,7 @@ async def async_setup_entry(
 
     entities: list[BinarySensorEntity] = []
     for contract_key in coordinator.data:
-        if contract_key == STATICS_DICT_NAME:
+        if contract_key in (STATICS_DICT_NAME, JWT_DICT_NAME):
             continue
 
         for description in BINARY_SENSORS:

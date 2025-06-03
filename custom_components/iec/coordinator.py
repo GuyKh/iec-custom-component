@@ -2,6 +2,7 @@
 
 import calendar
 import itertools
+import jwt
 import logging
 import traceback
 import socket
@@ -41,6 +42,7 @@ from .const import (
     DOMAIN,
     CONF_USER_ID,
     STATICS_DICT_NAME,
+    JWT_DICT_NAME,
     STATIC_KWH_TARIFF,
     INVOICE_DICT_NAME,
     FUTURE_CONSUMPTIONS_DICT_NAME,
@@ -65,6 +67,8 @@ from .const import (
     EST_BILL_DISTRIBUTION_PRICE_ATTR_NAME,
     EST_BILL_TOTAL_KVA_PRICE_ATTR_NAME,
     EST_BILL_KWH_CONSUMPTION_ATTR_NAME,
+    ACCESS_TOKEN_ISSUED_AT,
+    ACCESS_TOKEN_EXPIRATION_TIME,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -317,7 +321,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         )
         if not daily_reading:
             _LOGGER.debug(
-                f'Daily reading for date: {desired_date.strftime("%Y-%m-%d")} is missing, calculating manually'
+                f"Daily reading for date: {desired_date.strftime('%Y-%m-%d')} is missing, calculating manually"
             )
             readings = prefetched_reading
             if not readings:
@@ -330,7 +334,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 )
             else:
                 _LOGGER.debug(
-                    f'Daily reading for date: {desired_date.strftime("%Y-%m-%d")} - using existing prefetched readings'
+                    f"Daily reading for date: {desired_date.strftime('%Y-%m-%d')} - using existing prefetched readings"
                 )
 
             if readings and readings.data:
@@ -353,7 +357,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 )
                 if desired_date_reading is None or desired_date_reading.value <= 0:
                     _LOGGER.debug(
-                        f'Couldn\'t find daily reading for: {desired_date.strftime("%Y-%m-%d")}'
+                        f"Couldn't find daily reading for: {desired_date.strftime('%Y-%m-%d')}"
                     )
                 else:
                     daily_readings[device.device_number].append(
@@ -361,8 +365,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     )
         else:
             _LOGGER.debug(
-                f'Daily reading for date: {daily_reading.date.strftime("%Y-%m-%d")}'
-                f' is present: {daily_reading.value}'
+                f"Daily reading for date: {daily_reading.date.strftime('%Y-%m-%d')}"
+                f" is present: {daily_reading.value}"
             )
 
     async def _update_data(
@@ -390,12 +394,21 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         kwh_tariff = await self._get_kwh_tariff()
         kva_tariff = await self._get_kva_tariff()
 
+        access_token = self.api.get_token().access_token
+        decoded_token = jwt.decode(access_token, options={"verify_signature": False})
+        access_token_issued_at = decoded_token["iat"]
+        access_token_expiration_time = decoded_token["exp"]
+
         data = {
+            JWT_DICT_NAME: {
+                ACCESS_TOKEN_ISSUED_AT: access_token_issued_at,
+                ACCESS_TOKEN_EXPIRATION_TIME: access_token_expiration_time,
+            },
             STATICS_DICT_NAME: {
                 STATIC_KWH_TARIFF: kwh_tariff,
                 STATIC_KVA_TARIFF: kva_tariff,
                 STATIC_BP_NUMBER: self._bp_number,
-            }
+            },
         }
 
         estimated_bill_dict = None
@@ -454,7 +467,9 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
                 devices = await self._get_devices_by_contract_id(contract_id)
                 if not devices:
-                    _LOGGER.debug(f"No devices for contract {contract_id}. Skipping creating devices.")
+                    _LOGGER.debug(
+                        f"No devices for contract {contract_id}. Skipping creating devices."
+                    )
                     continue
 
                 for device in devices or []:
@@ -705,7 +720,14 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
                 if readings and readings.meter_start_date:
                     # Fetching the last reading from either the installation date or a month ago
-                    month_ago_time = max(month_ago_time, TIMEZONE.localize(datetime.combine(readings.meter_start_date, datetime.min.time())))
+                    month_ago_time = max(
+                        month_ago_time,
+                        TIMEZONE.localize(
+                            datetime.combine(
+                                readings.meter_start_date, datetime.min.time()
+                            )
+                        ),
+                    )
                 else:
                     _LOGGER.debug(
                         "[IEC Statistics] Failed to extract field `meterStartDate`, falling back to a month ago"
@@ -1016,8 +1038,10 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     future_consumption_info.total_import - last_meter_read
                 )
             else:
-                _LOGGER.warn(f"Failed to calculate Future Consumption, Assuming last meter read \
-                    ({last_meter_read}) as full consumption")
+                _LOGGER.warn(
+                    f"Failed to calculate Future Consumption, Assuming last meter read \
+                    ({last_meter_read}) as full consumption"
+                )
                 future_consumption = last_meter_read
 
         kva_price = power_size * kva_tariff / 365

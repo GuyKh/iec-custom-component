@@ -6,6 +6,12 @@
             }
         },
         "sensor": {
+            "access_token_expiry_time": {
+                "name": "תאריך פג התוקף של טוקן הגישה"
+            },
+            "access_token_issued_at": {
+                "name": "תאריך יצירת טוקן הגישה"
+            },
             "elec_forecasted_usage": {
                 "name": "סך צריכת החשמל בחשבונית הבאה {multi_contract}"
             },

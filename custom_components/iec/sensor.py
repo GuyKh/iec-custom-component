@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta, date
+from datetime import date, datetime, timedelta
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -14,36 +14,39 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfEnergy, UnitOfTime
+from homeassistant.const import EntityCategory, UnitOfEnergy, UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import StateType
 from iec_api.models.invoice import Invoice
 from iec_api.models.remote_reading import RemoteReading
 
-from .commons import find_reading_by_date, IecEntityType, TIMEZONE
+from .commons import TIMEZONE, IecEntityType, find_reading_by_date
 from .const import (
-    DOMAIN,
-    ILS,
-    STATICS_DICT_NAME,
-    STATIC_KWH_TARIFF,
-    FUTURE_CONSUMPTIONS_DICT_NAME,
-    INVOICE_DICT_NAME,
-    ILS_PER_KWH,
-    DAILY_READINGS_DICT_NAME,
-    EMPTY_REMOTE_READING,
-    CONTRACT_DICT_NAME,
-    EMPTY_INVOICE,
+    ACCESS_TOKEN_EXPIRATION_TIME,
+    ACCESS_TOKEN_ISSUED_AT,
     ATTRIBUTES_DICT_NAME,
-    METER_ID_ATTR_NAME,
-    ESTIMATED_BILL_DICT_NAME,
-    TOTAL_EST_BILL_ATTR_NAME,
-    EST_BILL_DAYS_ATTR_NAME,
+    CONTRACT_DICT_NAME,
+    DAILY_READINGS_DICT_NAME,
+    DOMAIN,
+    EMPTY_INVOICE,
+    EMPTY_REMOTE_READING,
     EST_BILL_CONSUMPTION_PRICE_ATTR_NAME,
+    EST_BILL_DAYS_ATTR_NAME,
     EST_BILL_DELIVERY_PRICE_ATTR_NAME,
     EST_BILL_DISTRIBUTION_PRICE_ATTR_NAME,
-    EST_BILL_TOTAL_KVA_PRICE_ATTR_NAME,
     EST_BILL_KWH_CONSUMPTION_ATTR_NAME,
+    EST_BILL_TOTAL_KVA_PRICE_ATTR_NAME,
+    ESTIMATED_BILL_DICT_NAME,
+    FUTURE_CONSUMPTIONS_DICT_NAME,
+    ILS,
+    ILS_PER_KWH,
+    INVOICE_DICT_NAME,
+    JWT_DICT_NAME,
+    METER_ID_ATTR_NAME,
+    STATIC_KWH_TARIFF,
+    STATICS_DICT_NAME,
+    TOTAL_EST_BILL_ATTR_NAME,
 )
 from .coordinator import IecApiCoordinator
 from .iec_entity import IecEntity
@@ -120,6 +123,24 @@ def _get_reading_by_date(
         return EMPTY_REMOTE_READING
 
 
+DIAGNOSTICS_SENSORS: tuple[IecEntityDescription, ...] = (
+    IecEntityDescription(
+        key="access_token_expiry_time",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: datetime.fromtimestamp(
+            data[ACCESS_TOKEN_EXPIRATION_TIME], tz=TIMEZONE
+        ),
+    ),
+    IecEntityDescription(
+        key="access_token_issued_at",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: datetime.fromtimestamp(
+            data[ACCESS_TOKEN_ISSUED_AT], tz=TIMEZONE
+        ),
+    ),
+)
 SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
     IecMeterEntityDescription(
         key="elec_forecasted_usage",
@@ -350,6 +371,16 @@ async def async_setup_entry(
                         is_multi_contract=False,
                     )
                 )
+        elif contract_key == JWT_DICT_NAME:
+            for sensor_desc in DIAGNOSTICS_SENSORS:
+                entities.append(
+                    IecSensor(
+                        coordinator,
+                        sensor_desc,
+                        JWT_DICT_NAME,
+                        is_multi_contract=False,
+                    )
+                )
         else:
             if coordinator.data[contract_key][CONTRACT_DICT_NAME].smart_meter:
                 sensors_desc: tuple[IecEntityDescription, ...] = (
@@ -425,7 +456,7 @@ class IecSensor(IecEntity, SensorEntity):
     def native_value(self) -> StateType:
         """Return the state."""
         if self.coordinator.data is not None:
-            if self.contract_id == STATICS_DICT_NAME:
+            if self.contract_id in (STATICS_DICT_NAME, JWT_DICT_NAME):
                 return self.entity_description.value_fn(
                     self.coordinator.data.get(self.contract_id, self.meter_id)
                 )
