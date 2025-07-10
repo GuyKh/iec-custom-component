@@ -1,15 +1,13 @@
 {
-  "domain": "iec",
-  "name": "Israel Electric Corporation (IEC)",
-  "codeowners": [
-    "@guykh"
-  ],
-  "config_flow": true,
-  "dependencies": ["recorder"],
-  "documentation": "https://github.com/guykh/iec-custom-component",
-  "iot_class": "cloud_polling",
-  "issue_tracker": "https://github.com/guykh/iec-custom-component/issues",
-  "loggers": ["iec_api"],
-  "requirements": ["iec-api==0.4.10"],
-  "version": "0.0.1"
+    "domain": "iec",
+    "name": "Israel Electric Corporation (IEC)",
+    "codeowners": ["@guykh"],
+    "config_flow": true,
+    "dependencies": ["recorder"],
+    "documentation": "https://github.com/guykh/iec-custom-component",
+    "iot_class": "cloud_polling",
+    "issue_tracker": "https://github.com/guykh/iec-custom-component/issues",
+    "loggers": ["iec_api"],
+    "requirements": ["iec-api==0.4.11"],
+    "version": "0.0.1"
 }
