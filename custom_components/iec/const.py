@@ -43,6 +43,7 @@ EMPTY_INVOICE = Invoice(
 )
 CONF_USER_ID = "user_id"
 CONF_TOTP_SECRET = "totp_secret"
+CONF_TOTP_TYPE = "otp_type"
 CONF_BP_NUMBER = "bp_number"
 CONF_SELECTED_CONTRACTS = "selected_contracts"
 CONF_AVAILABLE_CONTRACTS = "contracts"
