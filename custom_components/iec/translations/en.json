@@ -77,7 +77,7 @@
             },
             "mfa": {
                 "title": "OTP",
-                "description": "Enter your One Time Password (OTP)",
+                "description": "Enter your One Time Password (OTP) sent to your {otp_type}",
                 "data": {
                     "totp_secret": "e.g. 123456"
                 }
@@ -88,6 +88,7 @@
             },
             "reauth_confirm": {
                 "title": "[%key:common::config_flow::title::reauth%]",
+                "description": "Enter your One Time Password (OTP) send to your {otp_type}",
                 "data": {
                     "user_id": "User ID",
                     "totp_secret": "e.g. 123456"

@@ -80,7 +80,7 @@
             },
             "mfa": {
                 "title": "OTP",
-                "description": "הכניסו את הקוד החד-פעמי שנשלח אליכם (OTP)",
+                "description": "הכניסו את הקוד החד-פעמי שנשלח אליכם (OTP) שנשלח ל-{otp_type}",
                 "data": {
                     "totp_secret": "לדוג' 123456"
                 }
@@ -91,6 +91,7 @@
             },
             "reauth_confirm": {
                 "title": "[%key:common::config_flow::title::reauth%]",
+                "description": "הכניסו את הקוד החד-פעמי שנשלח אליכם (OTP) שנשלח ל-{otp_type}",
                 "data": {
                     "user_id": "מזהה לקוח",
                     "totp_secret": "לדוג' 123456"

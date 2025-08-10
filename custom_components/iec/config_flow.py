@@ -18,12 +18,12 @@ from iec_api.models.exceptions import IECError
 from iec_api.models.jwt import JWT
 
 from .const import (
-    CONF_TOTP_SECRET,
-    DOMAIN,
-    CONF_USER_ID,
-    CONF_BP_NUMBER,
     CONF_AVAILABLE_CONTRACTS,
+    CONF_BP_NUMBER,
     CONF_SELECTED_CONTRACTS,
+    CONF_TOTP_SECRET,
+    CONF_USER_ID,
+    DOMAIN,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -150,11 +150,12 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             schema = {}
 
         schema[vol.Required(CONF_TOTP_SECRET)] = str
-        await client.login_with_id()
+        otp_type = await client.login_with_id()
 
         return self.async_show_form(
             step_id="mfa",
             data_schema=vol.Schema(schema),
+            description_placeholders={"otp_type": otp_type},
             errors=errors,
         )
 
@@ -240,7 +241,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
             client = self.client
 
-        await client.login_with_id()
+        otp_type = await client.login_with_id()
 
         schema = {
             vol.Required(CONF_USER_ID): self.reauth_entry.data[CONF_USER_ID],
@@ -249,6 +250,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="reauth_confirm",
+            description_placeholders={"otp_type": otp_type},
             data_schema=vol.Schema(schema),
             errors=errors,
         )
