@@ -136,7 +136,9 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     for contract in contracts
                     if contract.status == 1
                 ]
-                if len(contract_ids) == 1:
+                if len(contract_ids) == 0:
+                    errors["base"] = "no_active_contracts"
+                elif len(contract_ids) == 1:
                     data[CONF_SELECTED_CONTRACTS] = [contract_ids[0]]
                     return self._async_create_iec_entry(data)
                 else:

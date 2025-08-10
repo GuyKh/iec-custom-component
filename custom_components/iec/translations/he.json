@@ -102,7 +102,8 @@
             "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
             "invalid_auth": "[%key:common::config_flow::error::invalid_auth%]",
             "invalid_id": "תעודת זהות לא תקנית",
-            "no_contracts": "נא לבחור לפחות חוזה אחד"
+            "no_contracts": "נא לבחור לפחות חוזה אחד",
+            "no_active_contracts": "לא נמצאו חוזים פעילים"
         },
         "abort": {
             "already_configured": "[%key:common::config_flow::abort::already_configured_service%]",
