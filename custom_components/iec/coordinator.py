@@ -1,6 +1,7 @@
 """Coordinator to handle IEC connections."""
 
 import calendar
+import asyncio
 import itertools
 import jwt
 import logging
@@ -189,18 +190,30 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         if not self._kwh_tariff:
             try:
                 self._kwh_tariff = await self.api.get_kwh_tariff()
+            except asyncio.CancelledError:
+                _LOGGER.warning(
+                    "Fetching kWh tariff was cancelled; using 0.0 and continuing"
+                )
+                self._kwh_tariff = 0.0
             except IECError as e:
                 _LOGGER.exception("Failed fetching kWh Tariff", e)
+            except Exception as e:
+                _LOGGER.exception("Unexpected error fetching kWh Tariff", e)
         return self._kwh_tariff or 0.0
 
     async def _get_kva_tariff(self) -> float:
         if not self._kva_tariff:
             try:
                 self._kva_tariff = await self.api.get_kva_tariff()
+            except asyncio.CancelledError:
+                _LOGGER.warning(
+                    "Fetching kVA tariff was cancelled; using 0.0 and continuing"
+                )
+                self._kva_tariff = 0.0
             except IECError as e:
                 _LOGGER.exception("Failed fetching KVA Tariff from IEC API", e)
             except Exception as e:
-                _LOGGER.exception("Failed fetching KVA Tariff", e)
+                _LOGGER.exception("Unexpected error fetching KVA Tariff", e)
         return self._kva_tariff or 0.0
 
     async def _get_delivery_tariff(self, phase) -> float:
