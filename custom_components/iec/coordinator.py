@@ -1,6 +1,7 @@
 """Coordinator to handle IEC connections."""
 
 import calendar
+import asyncio
 import itertools
 import jwt
 import logging
@@ -189,19 +190,103 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         if not self._kwh_tariff:
             try:
                 self._kwh_tariff = await self.api.get_kwh_tariff()
+            except asyncio.CancelledError:
+                _LOGGER.warning(
+                    "Fetching kWh tariff was cancelled; using 0.0 and continuing"
+                )
+                self._kwh_tariff = 0.0
             except IECError as e:
                 _LOGGER.exception("Failed fetching kWh Tariff", e)
+            except Exception as e:
+                _LOGGER.exception("Unexpected error fetching kWh Tariff", e)
+
+            # Fallback: try IEC calculators API when main call failed or returned 0.0
+            if not self._kwh_tariff or self._kwh_tariff == 0.0:
+                kwh_fallback, _ = await self._fetch_tariffs_from_calculators()
+                if kwh_fallback and kwh_fallback > 0:
+                    _LOGGER.debug("Using fallback kWh tariff from calculators API: %s", kwh_fallback)
+                    self._kwh_tariff = kwh_fallback
         return self._kwh_tariff or 0.0
 
     async def _get_kva_tariff(self) -> float:
         if not self._kva_tariff:
             try:
                 self._kva_tariff = await self.api.get_kva_tariff()
+            except asyncio.CancelledError:
+                _LOGGER.warning(
+                    "Fetching kVA tariff was cancelled; using 0.0 and continuing"
+                )
+                self._kva_tariff = 0.0
             except IECError as e:
                 _LOGGER.exception("Failed fetching KVA Tariff from IEC API", e)
             except Exception as e:
-                _LOGGER.exception("Failed fetching KVA Tariff", e)
+                _LOGGER.exception("Unexpected error fetching KVA Tariff", e)
+
+            # Fallback: try IEC calculators API when main call failed or returned 0.0
+            if not self._kva_tariff or self._kva_tariff == 0.0:
+                _, kva_fallback = await self._fetch_tariffs_from_calculators()
+                if kva_fallback and kva_fallback > 0:
+                    _LOGGER.debug("Using fallback kVA tariff from calculators API: %s", kva_fallback)
+                    self._kva_tariff = kva_fallback
         return self._kva_tariff or 0.0
+
+    async def _fetch_tariffs_from_calculators(self) -> tuple[float | None, float | None]:
+        """Fetch tariffs from IEC calculators endpoints as a fallback.
+
+        Returns: tuple of (kwh_home_rate, kva_rate), each may be None if not found.
+        """
+        session = aiohttp_client.async_get_clientsession(self.hass, family=socket.AF_INET)
+        kwh_tariff: float | None = None
+        kva_tariff: float | None = None
+
+        # Primary fallback: calculators/period (contains both homeRate and kvaRate)
+        try:
+            async with session.get(
+                "https://iecapi.iec.co.il/api/content/he-IL/calculators/period",
+                timeout=30,
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json(content_type=None)
+                    rates = data.get("period_Calculator_Rates") or {}
+                    kwh_val = rates.get("homeRate")
+                    kva_val = rates.get("kvaRate")
+                    if isinstance(kwh_val, (int, float)):
+                        kwh_tariff = float(kwh_val)
+                    if isinstance(kva_val, (int, float)):
+                        kva_tariff = float(kva_val)
+                    _LOGGER.debug(
+                        "Fetched fallback tariffs from calculators/period: homeRate=%s, kvaRate=%s",
+                        kwh_tariff,
+                        kva_tariff,
+                    )
+        except asyncio.CancelledError:
+            _LOGGER.debug("Fallback calculators/period fetch was cancelled")
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("Failed fetching fallback tariffs from calculators/period: %s", err)
+
+        # Secondary fallback: calculators/gadget (has homeRate only)
+        if kwh_tariff is None:
+            try:
+                async with session.get(
+                    "https://iecapi.iec.co.il/api/content/he-IL/calculators/gadget",
+                    timeout=30,
+                ) as resp:
+                    if resp.status == 200:
+                        data = await resp.json(content_type=None)
+                        rates = data.get("gadget_Calculator_Rates") or {}
+                        kwh_val = rates.get("homeRate")
+                        if isinstance(kwh_val, (int, float)):
+                            kwh_tariff = float(kwh_val)
+                        _LOGGER.debug(
+                            "Fetched fallback kWh tariff from calculators/gadget: homeRate=%s",
+                            kwh_tariff,
+                        )
+            except asyncio.CancelledError:
+                _LOGGER.debug("Fallback calculators/gadget fetch was cancelled")
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug("Failed fetching fallback kWh tariff from calculators/gadget: %s", err)
+
+        return kwh_tariff, kva_tariff
 
     async def _get_delivery_tariff(self, phase) -> float:
         delivery_tariff = self._delivery_tariff_by_phase.get(phase)
@@ -373,10 +458,32 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         self,
     ) -> dict[str, dict[str, Any]]:
         if not self._bp_number:
-            customer = await self.api.get_customer()
-            self._bp_number = customer.bp_number
+            try:
+                customer = await self.api.get_customer()
+                self._bp_number = customer.bp_number
+            except asyncio.CancelledError:
+                _LOGGER.warning(
+                    "Fetching customer was cancelled; using empty BP number and skipping contracts"
+                )
+                self._bp_number = None
+            except IECError as e:
+                _LOGGER.exception("Failed fetching customer", e)
+                self._bp_number = None
 
-        all_contracts: list[Contract] = await self.api.get_contracts(self._bp_number)
+        try:
+            all_contracts: list[Contract] = (
+                await self.api.get_contracts(self._bp_number)
+                if self._bp_number
+                else []
+            )
+        except asyncio.CancelledError:
+            _LOGGER.warning(
+                "Fetching contracts was cancelled; continuing with empty contracts"
+            )
+            all_contracts = []
+        except IECError as e:
+            _LOGGER.exception("Failed fetching contracts", e)
+            all_contracts = []
         if not self._contract_ids:
             self._contract_ids = [
                 int(contract.contract_id)
@@ -428,6 +535,11 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 billing_invoices = await self.api.get_billing_invoices(
                     self._bp_number, contract_id
                 )
+            except asyncio.CancelledError:
+                _LOGGER.warning(
+                    "Fetching invoices was cancelled; continuing without invoices"
+                )
+                billing_invoices = None
             except IECError as e:
                 _LOGGER.exception("Failed fetching invoices", e)
                 billing_invoices = None
@@ -669,6 +781,13 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
         try:
             return await self._update_data()
+        except asyncio.CancelledError as err:
+            _LOGGER.warning(
+                "Data update was cancelled (network timeout/cancelled); will retry later: %s",
+                err,
+            )
+            # Return empty data so setup doesn't fail; periodic refresh will try again
+            return {}
         except Exception as err:
             _LOGGER.error("Failed updating data. Exception: %s", err)
             _LOGGER.error(traceback.format_exc())
