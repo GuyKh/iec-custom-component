@@ -20,7 +20,7 @@ jobs:
             suffix: ${{ steps.release.outputs.suffix }}
             tag_name: ${{ steps.release.outputs.tag_name }}
         steps:
-            - uses: actions/checkout@v5
+            - uses: actions/checkout@v6
 
             - name: Extract tag and Details
               id: release
@@ -72,7 +72,7 @@ jobs:
         permissions:
             contents: write
         steps:
-            - uses: actions/checkout@v5
+            - uses: actions/checkout@v6
 
             - name: Set version to manifest.json
               run: |
