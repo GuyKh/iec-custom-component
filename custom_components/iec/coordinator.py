@@ -1,26 +1,30 @@
 """Coordinator to handle IEC connections."""
 
-import calendar
 import asyncio
+import calendar
 import itertools
-import jwt
 import logging
-import traceback
 import socket
-from datetime import datetime, timedelta, date
-from typing import cast, Any  # noqa: UP035
+import traceback
 from collections import Counter
+from datetime import date, datetime, timedelta
+from typing import Any, cast  # noqa: UP035
 from uuid import UUID
 
+import jwt
 from homeassistant.components.recorder import get_instance
-from homeassistant.components.recorder.models import StatisticData, StatisticMetaData
+from homeassistant.components.recorder.models import (
+    StatisticData,
+    StatisticMeanType,
+    StatisticMetaData,
+)
 from homeassistant.components.recorder.statistics import (
     async_add_external_statistics,
     get_last_statistics,
     statistics_during_period,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfEnergy, CONF_API_TOKEN
+from homeassistant.const import CONF_API_TOKEN, UnitOfEnergy
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import aiohttp_client
@@ -32,44 +36,44 @@ from iec_api.models.exceptions import IECError
 from iec_api.models.jwt import JWT
 from iec_api.models.meter_reading import MeterReading
 from iec_api.models.remote_reading import (
+    FutureConsumptionInfo,
     ReadingResolution,
     RemoteReading,
-    FutureConsumptionInfo,
     RemoteReadingResponse,
 )
 
-from .commons import find_reading_by_date, TIMEZONE
+from .commons import TIMEZONE, find_reading_by_date
 from .const import (
-    DOMAIN,
-    CONF_USER_ID,
-    STATICS_DICT_NAME,
-    JWT_DICT_NAME,
-    STATIC_KWH_TARIFF,
-    INVOICE_DICT_NAME,
-    FUTURE_CONSUMPTIONS_DICT_NAME,
-    DAILY_READINGS_DICT_NAME,
-    STATIC_BP_NUMBER,
-    ILS,
+    ACCESS_TOKEN_EXPIRATION_TIME,
+    ACCESS_TOKEN_ISSUED_AT,
+    ATTRIBUTES_DICT_NAME,
     CONF_BP_NUMBER,
     CONF_SELECTED_CONTRACTS,
+    CONF_USER_ID,
     CONTRACT_DICT_NAME,
-    EMPTY_INVOICE,
-    ELECTRIC_INVOICE_DOC_ID,
-    ATTRIBUTES_DICT_NAME,
     CONTRACT_ID_ATTR_NAME,
-    IS_SMART_METER_ATTR_NAME,
-    METER_ID_ATTR_NAME,
-    STATIC_KVA_TARIFF,
-    ESTIMATED_BILL_DICT_NAME,
-    TOTAL_EST_BILL_ATTR_NAME,
-    EST_BILL_DAYS_ATTR_NAME,
+    DAILY_READINGS_DICT_NAME,
+    DOMAIN,
+    ELECTRIC_INVOICE_DOC_ID,
+    EMPTY_INVOICE,
     EST_BILL_CONSUMPTION_PRICE_ATTR_NAME,
+    EST_BILL_DAYS_ATTR_NAME,
     EST_BILL_DELIVERY_PRICE_ATTR_NAME,
     EST_BILL_DISTRIBUTION_PRICE_ATTR_NAME,
-    EST_BILL_TOTAL_KVA_PRICE_ATTR_NAME,
     EST_BILL_KWH_CONSUMPTION_ATTR_NAME,
-    ACCESS_TOKEN_ISSUED_AT,
-    ACCESS_TOKEN_EXPIRATION_TIME,
+    EST_BILL_TOTAL_KVA_PRICE_ATTR_NAME,
+    ESTIMATED_BILL_DICT_NAME,
+    FUTURE_CONSUMPTIONS_DICT_NAME,
+    ILS,
+    INVOICE_DICT_NAME,
+    IS_SMART_METER_ATTR_NAME,
+    JWT_DICT_NAME,
+    METER_ID_ATTR_NAME,
+    STATIC_BP_NUMBER,
+    STATIC_KVA_TARIFF,
+    STATIC_KWH_TARIFF,
+    STATICS_DICT_NAME,
+    TOTAL_EST_BILL_ATTR_NAME,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -204,7 +208,10 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             if not self._kwh_tariff or self._kwh_tariff == 0.0:
                 kwh_fallback, _ = await self._fetch_tariffs_from_calculators()
                 if kwh_fallback and kwh_fallback > 0:
-                    _LOGGER.debug("Using fallback kWh tariff from calculators API: %s", kwh_fallback)
+                    _LOGGER.debug(
+                        "Using fallback kWh tariff from calculators API: %s",
+                        kwh_fallback,
+                    )
                     self._kwh_tariff = kwh_fallback
         return self._kwh_tariff or 0.0
 
@@ -226,16 +233,23 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             if not self._kva_tariff or self._kva_tariff == 0.0:
                 _, kva_fallback = await self._fetch_tariffs_from_calculators()
                 if kva_fallback and kva_fallback > 0:
-                    _LOGGER.debug("Using fallback kVA tariff from calculators API: %s", kva_fallback)
+                    _LOGGER.debug(
+                        "Using fallback kVA tariff from calculators API: %s",
+                        kva_fallback,
+                    )
                     self._kva_tariff = kva_fallback
         return self._kva_tariff or 0.0
 
-    async def _fetch_tariffs_from_calculators(self) -> tuple[float | None, float | None]:
+    async def _fetch_tariffs_from_calculators(
+        self,
+    ) -> tuple[float | None, float | None]:
         """Fetch tariffs from IEC calculators endpoints as a fallback.
 
         Returns: tuple of (kwh_home_rate, kva_rate), each may be None if not found.
         """
-        session = aiohttp_client.async_get_clientsession(self.hass, family=socket.AF_INET)
+        session = aiohttp_client.async_get_clientsession(
+            self.hass, family=socket.AF_INET
+        )
         kwh_tariff: float | None = None
         kva_tariff: float | None = None
 
@@ -262,7 +276,9 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         except asyncio.CancelledError:
             _LOGGER.debug("Fallback calculators/period fetch was cancelled")
         except Exception as err:  # noqa: BLE001
-            _LOGGER.debug("Failed fetching fallback tariffs from calculators/period: %s", err)
+            _LOGGER.debug(
+                "Failed fetching fallback tariffs from calculators/period: %s", err
+            )
 
         # Secondary fallback: calculators/gadget (has homeRate only)
         if kwh_tariff is None:
@@ -284,7 +300,10 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             except asyncio.CancelledError:
                 _LOGGER.debug("Fallback calculators/gadget fetch was cancelled")
             except Exception as err:  # noqa: BLE001
-                _LOGGER.debug("Failed fetching fallback kWh tariff from calculators/gadget: %s", err)
+                _LOGGER.debug(
+                    "Failed fetching fallback kWh tariff from calculators/gadget: %s",
+                    err,
+                )
 
         return kwh_tariff, kva_tariff
 
@@ -472,9 +491,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
         try:
             all_contracts: list[Contract] = (
-                await self.api.get_contracts(self._bp_number)
-                if self._bp_number
-                else []
+                await self.api.get_contracts(self._bp_number) if self._bp_number else []
             )
         except asyncio.CancelledError:
             _LOGGER.warning(
@@ -990,6 +1007,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 source=DOMAIN,
                 statistic_id=consumption_statistic_id,
                 unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+                mean_type=StatisticMeanType.NONE,
             )
 
             cost_metadata = StatisticMetaData(
@@ -999,6 +1017,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 source=DOMAIN,
                 statistic_id=cost_statistic_id,
                 unit_of_measurement=ILS,
+                mean_type=StatisticMeanType.NONE,
             )
 
             consumption_statistics = []

@@ -121,7 +121,9 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Handle MFA step."""
         if not self.data or not self.data.get(CONF_USER_ID):
             return self.async_show_form(
-                step_id="user", data_schema=STEP_USER_DATA_SCHEMA, errors={"base": "invalid_auth"}
+                step_id="user",
+                data_schema=STEP_USER_DATA_SCHEMA,
+                errors={"base": "invalid_auth"},
             )
 
         client: IecClient = self.client
@@ -152,7 +154,9 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     except IECError:
                         errors["base"] = "cannot_connect"
                     except Exception as err:  # noqa: BLE001
-                        _LOGGER.exception("Unexpected error during contracts fetch: %s", err)
+                        _LOGGER.exception(
+                            "Unexpected error during contracts fetch: %s", err
+                        )
                         errors["base"] = "cannot_connect"
 
                     if not errors:
