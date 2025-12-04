@@ -808,7 +808,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         except Exception as err:
             _LOGGER.error("Failed updating data. Exception: %s", err)
             _LOGGER.error(traceback.format_exc())
-            raise UpdateFailed("Failed Updating IEC data") from err
+            raise UpdateFailed("Failed Updating IEC data", retry_after=60) from err
 
     async def _insert_statistics(self, contract_id: int, is_smart_meter: bool) -> None:
         if not is_smart_meter:
