@@ -264,9 +264,9 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     rates = data.get("period_Calculator_Rates") or {}
                     kwh_val = rates.get("homeRate")
                     kva_val = rates.get("kvaRate")
-                    if isinstance(kwh_val, (int, float)):
+                    if isinstance(kwh_val, int | float):
                         kwh_tariff = float(kwh_val)
-                    if isinstance(kva_val, (int, float)):
+                    if isinstance(kva_val, int | float):
                         kva_tariff = float(kva_val)
                     _LOGGER.debug(
                         "Fetched fallback tariffs from calculators/period: homeRate=%s, kvaRate=%s",
@@ -291,7 +291,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                         data = await resp.json(content_type=None)
                         rates = data.get("gadget_Calculator_Rates") or {}
                         kwh_val = rates.get("homeRate")
-                        if isinstance(kwh_val, (int, float)):
+                        if isinstance(kwh_val, int | float):
                             kwh_tariff = float(kwh_val)
                         _LOGGER.debug(
                             "Fetched fallback kWh tariff from calculators/gadget: homeRate=%s",
@@ -781,20 +781,65 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             )
 
         self._first_load = False
-        try:
-            _LOGGER.debug("Checking if API token needs to be refreshed")
-            # First thing first, check the token and refresh if needed.
-            old_token = self.api.get_token()
-            await self.api.check_token()
-            new_token = self.api.get_token()
+
+        def update_token_if_changed(new_token):
+            """Update config entry if token has changed."""
             if old_token != new_token:
                 _LOGGER.debug("Token refreshed")
                 new_data = {**self._entry_data, CONF_API_TOKEN: new_token.to_dict()}
                 self.hass.config_entries.async_update_entry(
                     entry=self._config_entry, data=new_data
                 )
+
+        try:
+            _LOGGER.debug("Checking if API token needs to be refreshed")
+            old_token = self.api.get_token()
+            await self.api.check_token()
+            new_token = self.api.get_token()
+            update_token_if_changed(new_token)
+
+            _LOGGER.debug("Validating token with get_customer API call")
+            await self.api.get_customer()
+
         except IECError as err:
-            raise ConfigEntryAuthFailed from err
+            if err.status == 400:
+                _LOGGER.error(
+                    "Token validation failed with 400 Bad Request. Attempting refresh and retry."
+                )
+                try:
+                    await self.api.check_token()
+                    new_token_after_retry = self.api.get_token()
+                    update_token_if_changed(new_token_after_retry)
+                    await self.api.get_customer()
+                except IECError as retry_err:
+                    if retry_err.status == 400:
+                        _LOGGER.error(
+                            "Token refresh and retry failed with 400 Bad Request. Need to reconfigure integration."
+                        )
+                        entry = self.hass.config_entries.async_get_entry(
+                            self._config_entry.entry_id
+                        )
+                        if entry:
+                            try:
+                                await self.hass.config_entries.flow_manager.async_init(
+                                    DOMAIN,
+                                    context={"source": "reconfigure"},
+                                    entry_id=entry.entry_id,
+                                )
+                            except Exception as reconfig_err:  # noqa: BLE001
+                                _LOGGER.error(
+                                    "Failed to start reconfigure flow: %s", reconfig_err
+                                )
+                        raise ConfigEntryAuthFailed from retry_err
+                    else:
+                        raise ConfigEntryAuthFailed from retry_err
+            else:
+                _LOGGER.error(
+                    "Authentication error during token validation (status %s): %s",
+                    err.status,
+                    err,
+                )
+                raise ConfigEntryAuthFailed from err
 
         try:
             return await self._update_data()

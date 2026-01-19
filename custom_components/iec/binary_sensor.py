@@ -69,7 +69,7 @@ async def async_setup_entry(
             list(
                 filter(
                     lambda key: key not in (STATICS_DICT_NAME, JWT_DICT_NAME),
-                    list(coordinator.data.keys()),
+                    list(coordinator.data.keys()) if coordinator.data else [],
                 )
             )
         )
@@ -77,6 +77,13 @@ async def async_setup_entry(
     )
 
     entities: list[BinarySensorEntity] = []
+
+    if not coordinator.data:
+        _LOGGER.warning(
+            "Coordinator data is not available yet, skipping binary sensor setup"
+        )
+        return
+
     for contract_key in coordinator.data:
         if contract_key in (STATICS_DICT_NAME, JWT_DICT_NAME):
             continue
