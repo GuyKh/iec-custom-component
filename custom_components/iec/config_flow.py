@@ -319,6 +319,8 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self.context["entry_id"]
         )
         self.data = dict(self.reconfigure_entry.data)
+        # Clear TOTP secret for re-authentication
+        self.data.pop(CONF_TOTP_SECRET, None)
         return await self.async_step_reconfigure_mfa()
 
     async def async_step_reconfigure_mfa(
@@ -332,16 +334,18 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input and user_input.get(CONF_TOTP_SECRET) is not None:
             assert client
-            data = {**self.reconfigure_entry.data, **user_input}
-            errors = await _validate_login(self.hass, data, client)
+            # Create data for validation, merging existing data with TOTP_SECRET
+            validation_data = {**self.reconfigure_entry.data, **user_input}
+            errors = await _validate_login(self.hass, validation_data, client)
             if not errors:
-                data[CONF_API_TOKEN] = client.get_token().to_dict()
-
-                if data.get(CONF_TOTP_SECRET):
-                    data.pop(CONF_TOTP_SECRET)
+                # Only update the token, preserve all other existing data
+                updated_data = dict(self.reconfigure_entry.data)
+                updated_data[CONF_API_TOKEN] = client.get_token().to_dict()
+                # Ensure TOTP_SECRET is not persisted
+                updated_data.pop(CONF_TOTP_SECRET, None)
 
                 self.hass.config_entries.async_update_entry(
-                    self.reconfigure_entry, data=data
+                    self.reconfigure_entry, data=updated_data
                 )
                 await self.hass.config_entries.async_reload(
                     self.reconfigure_entry.entry_id
@@ -370,9 +374,6 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             otp_type = "OTP"
 
         schema = {
-            vol.Required(
-                CONF_USER_ID, default=self.reconfigure_entry.data[CONF_USER_ID]
-            ): str,
             vol.Required(CONF_TOTP_SECRET): str,
         }
 
