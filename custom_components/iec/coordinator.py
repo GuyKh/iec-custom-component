@@ -264,9 +264,9 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     rates = data.get("period_Calculator_Rates") or {}
                     kwh_val = rates.get("homeRate")
                     kva_val = rates.get("kvaRate")
-                    if isinstance(kwh_val, int | float):
+                    if isinstance(kwh_val, (int, float)):
                         kwh_tariff = float(kwh_val)
-                    if isinstance(kva_val, int | float):
+                    if isinstance(kva_val, (int, float)):
                         kva_tariff = float(kva_val)
                     _LOGGER.debug(
                         "Fetched fallback tariffs from calculators/period: homeRate=%s, kvaRate=%s",
@@ -291,7 +291,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                         data = await resp.json(content_type=None)
                         rates = data.get("gadget_Calculator_Rates") or {}
                         kwh_val = rates.get("homeRate")
-                        if isinstance(kwh_val, int | float):
+                        if isinstance(kwh_val, (int, float)):
                             kwh_tariff = float(kwh_val)
                         _LOGGER.debug(
                             "Fetched fallback kWh tariff from calculators/gadget: homeRate=%s",
@@ -821,10 +821,12 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                         )
                         if entry:
                             try:
-                                await self.hass.config_entries.flow_manager.async_init(
+                                await self.hass.config_entries.flow.async_init(
                                     DOMAIN,
-                                    context={"source": "reconfigure"},
-                                    entry_id=entry.entry_id,
+                                    context={
+                                        "source": "reconfigure",
+                                        "entry_id": entry.entry_id,
+                                    },
                                 )
                             except Exception as reconfig_err:  # noqa: BLE001
                                 _LOGGER.error(

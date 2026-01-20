@@ -330,7 +330,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         client: IecClient = self.client
 
-        if user_input is not None and user_input[CONF_TOTP_SECRET] is not None:
+        if user_input and user_input.get(CONF_TOTP_SECRET) is not None:
             assert client
             data = {**self.reconfigure_entry.data, **user_input}
             errors = await _validate_login(self.hass, data, client)
@@ -370,7 +370,9 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             otp_type = "OTP"
 
         schema = {
-            vol.Required(CONF_USER_ID): self.reconfigure_entry.data[CONF_USER_ID],
+            vol.Required(
+                CONF_USER_ID, default=self.reconfigure_entry.data[CONF_USER_ID]
+            ): str,
             vol.Required(CONF_TOTP_SECRET): str,
         }
 
