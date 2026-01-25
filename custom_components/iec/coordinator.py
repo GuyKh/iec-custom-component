@@ -988,9 +988,12 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
             for key, group in grouped_new_readings_by_hour:
                 group_list = list(group)
-                if len(group_list) < 4:
+                # Apply 4 listings per hour check only for days less than 1 month old
+                one_month_ago = localized_today - timedelta(days=30)
+                if key.date() >= one_month_ago.date() and len(group_list) < 4:
                     _LOGGER.debug(
-                        f"[IEC Statistics] LongTerm Statistics - Skipping {key} since it's partial for the hour"
+                        f"[IEC Statistics] LongTerm Statistics - Skipping {key} since it's partial for the hour "
+                        f"(data is less than 1 month old and has only {len(group_list)} readings)"
                     )
                     continue
                 if key <= last_stat_req_hour:
