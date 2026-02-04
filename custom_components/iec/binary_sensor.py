@@ -49,9 +49,11 @@ BINARY_SENSORS: tuple[IecBinarySensorEntityDescription, ...] = (
     IecBinarySensorEntityDescription(
         key="last_iec_invoice_paid",
         translation_key="last_iec_invoice_paid",
-        value_fn=lambda data: (data[INVOICE_DICT_NAME].amount_to_pay == 0)
-        if (data[INVOICE_DICT_NAME] != EMPTY_INVOICE)
-        else None,
+        value_fn=lambda data: (
+            (data[INVOICE_DICT_NAME].amount_to_pay == 0)
+            if (data[INVOICE_DICT_NAME] != EMPTY_INVOICE)
+            else None
+        ),
     ),
 )
 

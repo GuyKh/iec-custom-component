@@ -971,8 +971,10 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             )
 
             new_readings: list[RemoteReading] = filter(
-                lambda reading: reading.date
-                >= TIMEZONE.localize(datetime.fromtimestamp(last_stat_time)),
+                lambda reading: (
+                    reading.date
+                    >= TIMEZONE.localize(datetime.fromtimestamp(last_stat_time))
+                ),
                 readings.data,
             )
 
