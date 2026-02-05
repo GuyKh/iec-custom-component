@@ -90,7 +90,7 @@
                 "description": "בחרו באיזה חשבון חוזה להשתמש"
             },
             "reauth_confirm": {
-                "title": "[%key:common::config_flow::title::reauth%]",
+                "title": "@common::config_flow::title::reauth",
                 "description": "הכניסו את הקוד החד-פעמי שנשלח אליכם (OTP) שנשלח ל-{otp_type}",
                 "data": {
                     "user_id": "מזהה לקוח",
@@ -99,15 +99,15 @@
             }
         },
         "error": {
-            "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
-            "invalid_auth": "[%key:common::config_flow::error::invalid_auth%]",
+            "cannot_connect": "@common::config_flow::error::cannot_connect",
+            "invalid_auth": "@common::config_flow::error::invalid_auth",
             "invalid_id": "תעודת זהות לא תקנית",
             "no_contracts": "נא לבחור לפחות חוזה אחד",
             "no_active_contracts": "לא נמצאו חוזים פעילים"
         },
         "abort": {
-            "already_configured": "[%key:common::config_flow::abort::already_configured_service%]",
-            "reauth_successful": "[%key:common::config_flow::abort::reauth_successful%]"
+            "already_configured": "@common::config_flow::abort::already_configured_service",
+            "reauth_successful": "@common::config_flow::abort::reauth_successful"
         }
     }
 }

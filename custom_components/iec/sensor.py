@@ -381,12 +381,17 @@ async def async_setup_entry(
         len(
             list(
                 filter(
-                    lambda key: key != STATICS_DICT_NAME, list(coordinator.data.keys())
+                    lambda key: key != STATICS_DICT_NAME,
+                    list(coordinator.data.keys()) if coordinator.data else [],
                 )
             )
         )
         > 1
     )
+
+    if not coordinator.data:
+        _LOGGER.warning("Coordinator data is not available yet, skipping sensor setup")
+        return
 
     for contract_key in coordinator.data:
         if contract_key == STATICS_DICT_NAME:

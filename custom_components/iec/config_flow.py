@@ -80,8 +80,9 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
     def __init__(self) -> None:
-        """Initialize a new IECConfigFlow."""
+        """Initialize a new IecConfigFlow."""
         self.reauth_entry: config_entries.ConfigEntry | None = None
+        self.reconfigure_entry: config_entries.ConfigEntry | None = None
         self.data: dict[str, Any] | None = None
         self.client: IecClient | None = None
 
@@ -305,6 +306,79 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="reauth_confirm",
+            description_placeholders={"otp_type": otp_type},
+            data_schema=vol.Schema(schema),
+            errors=errors,
+        )
+
+    async def async_step_reconfigure(
+        self, entry_data: Mapping[str, Any] | None = None
+    ) -> FlowResult:
+        """Handle configuration by reconfigure."""
+        self.reconfigure_entry = self.hass.config_entries.async_get_entry(
+            self.context["entry_id"]
+        )
+        self.data = dict(self.reconfigure_entry.data)
+        # Clear TOTP secret for re-authentication
+        self.data.pop(CONF_TOTP_SECRET, None)
+        return await self.async_step_reconfigure_mfa()
+
+    async def async_step_reconfigure_mfa(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Handle MFA step for reconfigure."""
+        assert self.reconfigure_entry
+        errors: dict[str, str] = {}
+
+        client: IecClient = self.client
+
+        if user_input and user_input.get(CONF_TOTP_SECRET) is not None:
+            assert client
+            # Create data for validation, merging existing data with TOTP_SECRET
+            validation_data = {**self.reconfigure_entry.data, **user_input}
+            errors = await _validate_login(self.hass, validation_data, client)
+            if not errors:
+                # Only update the token, preserve all other existing data
+                updated_data = dict(self.reconfigure_entry.data)
+                updated_data[CONF_API_TOKEN] = client.get_token().to_dict()
+                # Ensure TOTP_SECRET is not persisted
+                updated_data.pop(CONF_TOTP_SECRET, None)
+
+                self.hass.config_entries.async_update_entry(
+                    self.reconfigure_entry, data=updated_data
+                )
+                await self.hass.config_entries.async_reload(
+                    self.reconfigure_entry.entry_id
+                )
+                return self.async_abort(reason="reconfigure_successful")
+
+        if not client:
+            self.client = IecClient(
+                self.data[CONF_USER_ID], async_create_clientsession(self.hass)
+            )
+            client = self.client
+
+        try:
+            otp_type = await client.login_with_id()
+        except asyncio.CancelledError:
+            errors["base"] = errors.get("base") or "cannot_connect"
+            otp_type = "OTP"
+        except IECError:
+            errors["base"] = errors.get("base") or "cannot_connect"
+            otp_type = "OTP"
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.exception(
+                "Unexpected error during reconfigure login_with_id: %s", err
+            )
+            errors["base"] = errors.get("base") or "cannot_connect"
+            otp_type = "OTP"
+
+        schema = {
+            vol.Required(CONF_TOTP_SECRET): str,
+        }
+
+        return self.async_show_form(
+            step_id="reconfigure_mfa",
             description_placeholders={"otp_type": otp_type},
             data_schema=vol.Schema(schema),
             errors=errors,

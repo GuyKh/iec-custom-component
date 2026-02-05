@@ -6,6 +6,7 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 
 from .const import DOMAIN
 from .coordinator import IecApiCoordinator
@@ -23,8 +24,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = iec_coordinator
     try:
         await hass.data[DOMAIN][entry.entry_id].async_config_entry_first_refresh()
+    except ConfigEntryAuthFailed:
+        raise
     except Exception as err:
-        # Log the error but don't fail the setup
         _LOGGER.error("Failed to fetch initial data: %s", err)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
