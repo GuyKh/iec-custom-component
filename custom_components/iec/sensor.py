@@ -207,7 +207,7 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
                     data[ATTRIBUTES_DICT_NAME][METER_ID_ATTR_NAME]
                 ],
                 TIMEZONE.localize(datetime.now()),
-            ).value
+            ).consumption
             if (
                 data[DAILY_READINGS_DICT_NAME]
                 and [data[ATTRIBUTES_DICT_NAME][METER_ID_ATTR_NAME]]
@@ -228,7 +228,7 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
                         data[ATTRIBUTES_DICT_NAME][METER_ID_ATTR_NAME]
                     ],
                     TIMEZONE.localize(datetime.now()) - timedelta(days=1),
-                ).value
+                ).consumption
             )
             if (data[DAILY_READINGS_DICT_NAME])
             else None
@@ -244,11 +244,12 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
             (
                 sum(
                     [
-                        reading.value
+                        reading.consumption
                         for reading in data[DAILY_READINGS_DICT_NAME][
                             data[ATTRIBUTES_DICT_NAME][METER_ID_ATTR_NAME]
                         ]
-                        if reading.date.month == TIMEZONE.localize(datetime.now()).month
+                        if reading.interval.month
+                        == TIMEZONE.localize(datetime.now()).month
                     ]
                 )
             )
