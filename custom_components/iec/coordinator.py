@@ -38,7 +38,7 @@ from iec_api.models.meter_reading import MeterReading
 from iec_api.models.remote_reading import (
     FutureConsumptionInfo,
     ReadingResolution,
-    RemoteReading,
+    PeriodConsumption,
     RemoteReadingResponse,
 )
 
@@ -407,7 +407,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
     async def _verify_daily_readings_exist(
         self,
-        daily_readings: dict[str, list[RemoteReading]],
+        daily_readings: dict[str, list[PeriodConsumption]],
         desired_date: date,
         device: Device,
         contract_id: int,
@@ -441,8 +441,10 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     f"Daily reading for date: {desired_date.strftime('%Y-%m-%d')} - using existing prefetched readings"
                 )
 
-            if readings and readings.data:
-                daily_readings[device.device_number] += readings.data
+            if readings and readings.meter_list and len(readings.meter_list) > 0:
+                daily_readings[device.device_number] += readings.meter_list[
+                    0
+                ].period_consumptions
 
                 # Remove duplicates
                 daily_readings[device.device_number] = list(
@@ -450,27 +452,35 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 )
 
                 # Sort by Date
-                daily_readings[device.device_number].sort(key=lambda x: x.date)
+                daily_readings[device.device_number].sort(key=lambda x: x.interval)
 
                 desired_date_reading = next(
                     filter(
-                        lambda reading: reading.date.date() == desired_date,
-                        readings.data,
+                        lambda reading: reading.interval.date() == desired_date,
+                        readings.meter_list[0].period_consumptions,
                     ),
                     None,
                 )
-                if desired_date_reading is None or desired_date_reading.value <= 0:
+                if (
+                    desired_date_reading is None
+                    or desired_date_reading.consumption <= 0
+                ):
                     _LOGGER.debug(
                         f"Couldn't find daily reading for: {desired_date.strftime('%Y-%m-%d')}"
                     )
                 else:
                     daily_readings[device.device_number].append(
-                        RemoteReading(0, desired_date, desired_date_reading.value)
+                        PeriodConsumption(
+                            status=0,
+                            interval=desired_date,
+                            consumption=desired_date_reading.consumption,
+                            back_stream=0,
+                        )
                     )
         else:
             _LOGGER.debug(
-                f"Daily reading for date: {daily_reading.date.strftime('%Y-%m-%d')}"
-                f" is present: {daily_reading.value}"
+                f"Daily reading for date: {daily_reading.interval.strftime('%Y-%m-%d')}"
+                f" is present: {daily_reading.consumption}"
             )
 
     async def _update_data(
@@ -580,7 +590,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 last_invoice = EMPTY_INVOICE
 
             future_consumption: dict[str, FutureConsumptionInfo | None] | None = {}
-            daily_readings: dict[str, list[RemoteReading] | None] | None = {}
+            daily_readings: dict[str, list[PeriodConsumption] | None] | None = {}
 
             is_smart_meter = contracts.get(contract_id).smart_meter
             is_private_producer = contracts.get(contract_id).from_private_producer
@@ -640,8 +650,14 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                         reading_date,
                         reading_type,
                     )
-                    if remote_reading and remote_reading.data:
-                        daily_readings[device.device_number] = remote_reading.data
+                    if (
+                        remote_reading
+                        and remote_reading.meter_list
+                        and len(remote_reading.meter_list) > 0
+                    ):
+                        daily_readings[device.device_number] = (
+                            remote_reading.meter_list[0].period_consumptions
+                        )
                     else:
                         _LOGGER.warning(
                             "No %s readings returned for device %s in contract %s on %s",
@@ -682,14 +698,17 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     ):
                         if (
                             self._today_readings.get(today_reading_key)
-                            and self._today_readings.get(
-                                today_reading_key
-                            ).future_consumption_info.future_consumption
+                            and self._today_readings.get(today_reading_key).meter_list[
+                                0
+                            ]
+                            and self._today_readings.get(today_reading_key)
+                            .meter_list[0]
+                            .future_consumption_info.future_consumption
                         ):
                             future_consumption[device.device_number] = (
-                                self._today_readings.get(
-                                    today_reading_key
-                                ).future_consumption_info
+                                self._today_readings.get(today_reading_key)
+                                .meter_list[0]
+                                .future_consumption_info
                             )
                         else:
                             req_date = localized_today - timedelta(days=2)
@@ -706,7 +725,9 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                                 and two_days_ago_reading.total_import
                             ):  # use total_import as validation that reading OK:
                                 future_consumption[device.device_number] = (
-                                    two_days_ago_reading.future_consumption_info
+                                    two_days_ago_reading.meter_list[
+                                        0
+                                    ].future_consumption_info
                                 )
                             else:
                                 _LOGGER.warning(
@@ -916,14 +937,20 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                         str(contract_id) + "-" + device.device_number
                     ] = readings
 
-            if not readings or not readings.data:
+            if (
+                not readings
+                or not readings.meter_list
+                or not len(readings.meter_list) > 0
+                or not readings.meter_list[0].period_consumptions
+                or not len(readings.meter_list[0].period_consumptions) > 0
+            ):
                 _LOGGER.debug("[IEC Statistics] No recent usage data. Skipping update")
                 continue
 
             last_stat_hour = (
                 datetime.fromtimestamp(last_stat_time)
                 if last_stat_time
-                else readings.data[0].date
+                else readings.meter_list[0].period_consumptions[0].interval
             )
             last_stat_req_hour = (
                 last_stat_hour
@@ -970,17 +997,17 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 f"[IEC Statistics] Last Estimated Cost Sum for C[{contract_id}] D[{device.device_number}]: {cost_sum}"
             )
 
-            new_readings: list[RemoteReading] = filter(
+            new_readings: list[PeriodConsumption] = filter(
                 lambda reading: (
-                    reading.date
+                    reading.interval
                     >= TIMEZONE.localize(datetime.fromtimestamp(last_stat_time))
                 ),
-                readings.data,
+                readings.meter_list[0].period_consumptions,
             )
 
             grouped_new_readings_by_hour = itertools.groupby(
                 new_readings,
-                key=lambda reading: reading.date.replace(
+                key=lambda reading: reading.interval.replace(
                     minute=0, second=0, microsecond=0
                 ),
             )
@@ -1003,7 +1030,9 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                         f"[IEC Statistics] LongTerm Statistics - Skipping {key} data since it's already reported"
                     )
                     continue
-                readings_by_hour[key] = sum(reading.value for reading in group_list)
+                readings_by_hour[key] = sum(
+                    reading.consumption for reading in group_list
+                )
 
             consumption_metadata = StatisticMetaData(
                 has_mean=False,
