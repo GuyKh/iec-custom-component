@@ -4,7 +4,7 @@ from datetime import datetime
 
 from iec_api.models.invoice import Invoice
 from iec_api.models.meter_reading import MeterReading
-from iec_api.models.remote_reading import RemoteReading
+from iec_api.models.remote_reading import PeriodConsumption
 
 DOMAIN = "iec"
 
@@ -12,7 +12,7 @@ ILS = "₪"
 ILS_PER_KWH = "ILS/kWh"
 
 EMPTY_DATETIME = datetime.fromordinal(1)
-EMPTY_REMOTE_READING = RemoteReading(0, datetime(2024, 1, 1), 0)
+EMPTY_REMOTE_READING = PeriodConsumption(datetime(2024, 1, 1), 0, 0)
 EMPTY_INVOICE = Invoice(
     consumption=0,
     amount_origin=0,

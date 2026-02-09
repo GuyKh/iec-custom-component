@@ -19,7 +19,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import StateType
 from iec_api.models.invoice import Invoice
-from iec_api.models.remote_reading import RemoteReading
+from iec_api.models.remote_reading import PeriodConsumption
 
 from .commons import TIMEZONE, IecEntityType, find_reading_by_date
 from .const import (
@@ -102,8 +102,8 @@ def _get_iec_type_by_class(description: IecEntityDescription) -> IecEntityType:
 
 
 def _get_reading_by_date(
-    readings: list[RemoteReading] | None, desired_datetime: datetime
-) -> RemoteReading:
+    readings: list[PeriodConsumption] | None, desired_datetime: datetime
+) -> PeriodConsumption:
     if not readings:
         return EMPTY_REMOTE_READING
 

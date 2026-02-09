@@ -722,7 +722,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
                             if (
                                 two_days_ago_reading
-                                and two_days_ago_reading.total_import
+                                and two_days_ago_reading.meter_list[0].total_import
                             ):  # use total_import as validation that reading OK:
                                 future_consumption[device.device_number] = (
                                     two_days_ago_reading.meter_list[
