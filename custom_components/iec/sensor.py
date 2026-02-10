@@ -5,7 +5,8 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
+from typing import Any
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -58,10 +59,8 @@ _LOGGER = logging.getLogger(__name__)
 class IecEntityDescriptionMixin:
     """Mixin values for required keys."""
 
-    value_fn: Callable[[dict | tuple], str | float | date] | None = None
-    custom_attrs_fn: (
-        Callable[[dict | tuple], dict[str, str | int | float | date]] | None
-    ) = None
+    value_fn: Callable[[Any], StateType] | None = None
+    custom_attrs_fn: Callable[[Any], dict[str, Any] | None] | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -87,8 +86,8 @@ def get_previous_bill_kwh_price(invoice: Invoice) -> float:
     """
 
     if not invoice.consumption or not invoice.amount_origin:
-        return 0
-    return invoice.consumption / invoice.amount_origin
+        return 0.0
+    return float(invoice.consumption) / float(invoice.amount_origin)
 
 
 def _get_iec_type_by_class(description: IecEntityDescription) -> IecEntityType:
@@ -411,13 +410,11 @@ async def async_setup_entry(
                     )
                 )
         else:
+            sensors_desc: tuple[IecEntityDescription, ...]
             if coordinator.data[contract_key][CONTRACT_DICT_NAME].smart_meter:
-                sensors_desc: tuple[IecEntityDescription, ...] = (
-                    ELEC_SENSORS + SMART_ELEC_SENSORS
-                )
+                sensors_desc = ELEC_SENSORS + SMART_ELEC_SENSORS
             else:
-                sensors_desc: tuple[IecEntityDescription, ...] = ELEC_SENSORS
-            # sensors_desc: tuple[IecEntityDescription, ...] = ELEC_SENSORS
+                sensors_desc = ELEC_SENSORS
 
             contract_id = coordinator.data[contract_key][CONTRACT_DICT_NAME].contract_id
             for sensor_desc in sensors_desc:
@@ -445,7 +442,7 @@ class IecSensor(IecEntity, SensorEntity):
         description: IecEntityDescription,
         contract_id: str,
         is_multi_contract: bool,
-        attributes_to_add: dict | None = None,
+        attributes_to_add: dict[str, Any] | None = None,
     ) -> None:
         """Initialize the sensor."""
         super().__init__(
@@ -459,7 +456,7 @@ class IecSensor(IecEntity, SensorEntity):
         self._attr_translation_key = f"{description.key}"
         self._attr_translation_placeholders = {"multi_contract": f"of {contract_id}"}
 
-        attributes = {"contract_id": contract_id}
+        attributes: dict[str, Any] = {"contract_id": contract_id}
 
         if attributes_to_add:
             attributes.update(attributes_to_add)
@@ -484,7 +481,7 @@ class IecSensor(IecEntity, SensorEntity):
     @property
     def native_value(self) -> StateType:
         """Return the state."""
-        if self.coordinator.data is not None:
+        if self.coordinator.data is not None and self.entity_description.value_fn:
             if self.contract_id in (STATICS_DICT_NAME, JWT_DICT_NAME):
                 return self.entity_description.value_fn(
                     self.coordinator.data.get(self.contract_id, self.meter_id)

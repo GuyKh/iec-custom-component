@@ -74,10 +74,11 @@ async def _validate_login(
     return errors
 
 
-class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+class IecConfigFlow(config_entries.ConfigFlow):
     """Handle a config flow for IEC."""
 
     VERSION = 1
+    DOMAIN = DOMAIN
 
     def __init__(self) -> None:
         """Initialize a new IECConfigFlow."""
@@ -139,6 +140,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     if data.get(CONF_TOTP_SECRET):
                         data.pop(CONF_TOTP_SECRET)
 
+                    contract_ids: list[int] = []
                     try:
                         customer = await client.get_customer()
                         data[CONF_BP_NUMBER] = customer.bp_number
@@ -221,19 +223,18 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         assert self.data.get(CONF_BP_NUMBER) is not None
 
         errors: dict[str, str] = {}
-        if (
-            user_input is not None
-            and user_input.get(CONF_SELECTED_CONTRACTS) is not None
-        ):
-            if len(user_input.get(CONF_SELECTED_CONTRACTS)) == 0:
-                errors["base"] = "no_contracts"
-            else:
-                data = {**self.data, **user_input}
-                if data.get(CONF_AVAILABLE_CONTRACTS):
-                    data.pop(CONF_AVAILABLE_CONTRACTS)
+        if user_input is not None:
+            selected_contracts = user_input.get(CONF_SELECTED_CONTRACTS)
+            if selected_contracts is not None:
+                if len(selected_contracts) == 0:
+                    errors["base"] = "no_contracts"
+                else:
+                    data = {**self.data, **user_input}
+                    if data.get(CONF_AVAILABLE_CONTRACTS):
+                        data.pop(CONF_AVAILABLE_CONTRACTS)
 
-                self.data = data
-                return self._async_create_iec_entry(data)
+                    self.data = data
+                    return self._async_create_iec_entry(data)
 
         schema = {
             vol.Required(
@@ -280,9 +281,10 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return self.async_abort(reason="reauth_successful")
 
         if not client:
-            self.client = IecClient(
-                self.data[CONF_USER_ID], async_create_clientsession(self.hass)
-            )
+            user_id = self.data.get(CONF_USER_ID) if self.data else None
+            if not user_id:
+                user_id = self.reauth_entry.data.get(CONF_USER_ID, "")
+            self.client = IecClient(user_id, async_create_clientsession(self.hass))
             client = self.client
 
         try:

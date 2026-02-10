@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 from homeassistant.components.binary_sensor import (
     BinarySensorEntityDescription,
@@ -35,7 +36,7 @@ _LOGGER = logging.getLogger(__name__)
 class IecBinaryEntityDescriptionMixin:
     """Mixin values for required keys."""
 
-    value_fn: Callable[dict, bool | None]
+    value_fn: Callable[[Any], bool | None]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -110,8 +111,8 @@ class IecBinarySensorEntity(IecEntity, BinarySensorEntity):
         entity_description: IecBinarySensorEntityDescription,
         contract_id: str,
         is_multi_contract: bool,
-        attributes_to_add: dict | None = None,
-    ):
+        attributes_to_add: dict[str, Any] | None = None,
+    ) -> None:
         """Initialize the sensor."""
         super().__init__(
             coordinator,
@@ -122,7 +123,7 @@ class IecBinarySensorEntity(IecEntity, BinarySensorEntity):
         self.entity_description = entity_description
         self._attr_unique_id = f"{str(contract_id)}_{entity_description.key}"
 
-        attributes = {"contract_id": contract_id}
+        attributes: dict[str, Any] = {"contract_id": contract_id}
 
         if attributes_to_add:
             attributes.update(attributes_to_add)
@@ -140,9 +141,10 @@ class IecBinarySensorEntity(IecEntity, BinarySensorEntity):
     @property
     def is_on(self) -> bool | None:
         """Return the state of the sensor."""
-        return self.entity_description.value_fn(
-            self.coordinator.data.get(self.contract_id)
-        )
+        contract_data = self.coordinator.data.get(self.contract_id)
+        if contract_data is None:
+            return None
+        return self.entity_description.value_fn(contract_data)
 
     @property
     def device_info(self) -> DeviceInfo:
