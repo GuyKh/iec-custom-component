@@ -25,5 +25,66 @@ jobs:
         - name: "Install requirements"
           run: python3 -m pip install -r requirements.txt
 
-        - name: "Run"
+        - name: "Run Ruff"
           run: python3 -m ruff check .
+
+  mypy:
+    name: "Type Check"
+    runs-on: "ubuntu-latest"
+    steps:
+        - name: "Checkout the repository"
+          uses: "actions/checkout@v6.0.2"
+
+        - name: "Set up Python"
+          uses: actions/setup-python@v6.2.0
+          with:
+            python-version: "3.11"
+            cache: "pip"
+
+        - name: "Install requirements"
+          run: python3 -m pip install -r requirements.txt
+
+        - name: "Run MyPy"
+          run: python3 -m mypy custom_components/iec
+
+  autofix:
+    name: "Auto-fix"
+    runs-on: "ubuntu-latest"
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: write
+    steps:
+        - name: "Checkout the repository"
+          uses: "actions/checkout@v6.0.2"
+          with:
+            ref: ${{ github.head_ref }}
+
+        - name: "Set up Python"
+          uses: actions/setup-python@v6.2.0
+          with:
+            python-version: "3.11"
+            cache: "pip"
+
+        - name: "Install requirements"
+          run: python3 -m pip install -r requirements.txt
+
+        - name: "Auto-fix with Ruff"
+          run: python3 -m ruff check . --fix
+
+        - name: "Check for changes"
+          id: verify-changed-files
+          run: |
+            if git diff --quiet; then
+              echo "changed=false" >> $GITHUB_OUTPUT
+            else
+              echo "changed=true" >> $GITHUB_OUTPUT
+            fi
+
+        - name: "Commit changes"
+          if: steps.verify-changed-files.outputs.changed == 'true'
+          run: |
+            git config --local user.email "github-actions[bot]@users.noreply.github.com"
+            git config --local user.name "github-actions[bot]"
+            git add -A
+            git commit -m "style: auto-fix ruff linting issues"
+            git push

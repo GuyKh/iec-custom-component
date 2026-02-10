@@ -1,14 +1,13 @@
 """IEC common functions."""
 
-import pytz
-
 from datetime import date
 from enum import Enum
 
+import pytz
 from homeassistant.helpers.device_registry import DeviceInfo
 from iec_api.models.remote_reading import PeriodConsumption
 
-from custom_components.iec import DOMAIN
+from .const import DOMAIN
 
 TIMEZONE = pytz.timezone("Asia/Jerusalem")
 
@@ -29,7 +28,9 @@ def find_reading_by_date(daily_reading: PeriodConsumption, desired_date: date) -
         TypeError: If the `daily_reading.date` attribute is not of type `datetime`.
 
     """
-    return daily_reading.interval.date() == desired_date  # Checks if the dates match
+    return bool(
+        daily_reading.interval.date() == desired_date
+    )  # Checks if the dates match
 
 
 class IecEntityType(Enum):

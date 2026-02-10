@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 import logging
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
@@ -30,7 +31,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     # Register the debug service
-    async def handle_debug_get_coordinator_data(call) -> None:  # noqa: ANN001 ARG001
+    async def handle_debug_get_coordinator_data(call: Any) -> None:
         # Log or return coordinator data
         data = iec_coordinator.data
         _LOGGER.info("Coordinator data: %s", data)
@@ -45,7 +46,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
-    if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
+    unload_ok: bool = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unload_ok:
         coordinator = hass.data[DOMAIN].pop(entry.entry_id, None)
         if coordinator:
             await coordinator.async_unload()

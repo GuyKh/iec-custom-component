@@ -4,9 +4,5 @@ set -e
 
 cd "$(dirname "$0")/.."
 
-echo "Running ruff linter..."
-ruff check . --fix
-
-echo ""
 echo "Running mypy type checker..."
 mypy custom_components/iec

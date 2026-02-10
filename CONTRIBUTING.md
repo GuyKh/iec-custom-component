@@ -7,6 +7,14 @@ Contributing to this project should be as easy and transparent as possible, whet
 - Submitting a fix
 - Proposing new features
 
+## Development Setup
+
+To set up your development environment:
+
+1. Fork the repo and clone it locally
+2. Run `./scripts/setup` to install dependencies and set up git hooks
+3. The pre-commit hook will automatically run linting and type checking on every commit
+
 ## Github is used for everything
 
 Github is used to host code, to track issues and feature requests, as well as accept pull requests.
@@ -44,7 +52,17 @@ People *love* thorough bug reports. I'm not even kidding.
 
 ## Use a Consistent Coding Style
 
-Use [black](https://github.com/ambv/black) to make sure the code follows the style.
+This project uses:
+- **[Ruff](https://github.com/astral-sh/ruff)** for linting and code formatting
+- **[MyPy](https://github.com/python/mypy)** for static type checking
+
+The pre-commit hook will automatically run these checks before each commit. You can also run them manually:
+
+```bash
+./scripts/lint          # Run both ruff and mypy
+./scripts/typecheck     # Run mypy only
+ruff check . --fix      # Auto-fix linting issues
+```
 
 ## Test your code modification
 

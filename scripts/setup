@@ -1,7 +1,94 @@
 #!/usr/bin/env bash
+#
+# Setup script for development environment
+# Installs dependencies and sets up git hooks
 
 set -e
 
 cd "$(dirname "$0")/.."
 
+echo "Installing Python dependencies..."
 python3 -m pip install --requirement requirements.txt
+
+echo ""
+echo "Setting up git hooks..."
+
+# Create pre-commit hook
+if [ ! -f .git/hooks/pre-commit ]; then
+    cat > .git/hooks/pre-commit << 'EOF'
+#!/bin/sh
+#
+# Pre-commit hook to run linting and type checking
+# This hook is called by "git commit" with no arguments
+
+# Get the directory where this script is located
+HOOK_DIR="$(dirname "$0")"
+REPO_ROOT="$(cd "$HOOK_DIR/../.." && pwd)"
+
+cd "$REPO_ROOT"
+
+echo "Running pre-commit checks..."
+echo ""
+
+# Check if Python is available
+if ! command -v python3 >/dev/null 2>&1; then
+    echo "Error: python3 not found"
+    exit 1
+fi
+
+# Run Ruff linting
+echo "Running Ruff linter..."
+if command -v ruff >/dev/null 2>&1; then
+    ruff check .
+    RUFF_EXIT=$?
+else
+    # Try running via python module
+    python3 -m ruff check .
+    RUFF_EXIT=$?
+fi
+
+if [ $RUFF_EXIT -ne 0 ]; then
+    echo ""
+    echo "Ruff found issues. You can try to auto-fix with: ruff check . --fix"
+    echo "Commit aborted."
+    exit 1
+fi
+
+echo "Ruff passed!"
+echo ""
+
+# Run MyPy type checking
+echo "Running MyPy type checker..."
+if command -v mypy >/dev/null 2>&1; then
+    mypy custom_components/iec
+    MYPY_EXIT=$?
+else
+    # Try running via python module
+    python3 -m mypy custom_components/iec
+    MYPY_EXIT=$?
+fi
+
+if [ $MYPY_EXIT -ne 0 ]; then
+    echo ""
+    echo "MyPy found type errors. Please fix them before committing."
+    echo "Commit aborted."
+    exit 1
+fi
+
+echo "MyPy passed!"
+echo ""
+
+echo "All pre-commit checks passed!"
+exit 0
+EOF
+    chmod +x .git/hooks/pre-commit
+    echo "Pre-commit hook installed successfully!"
+else
+    echo "Pre-commit hook already exists. Skipping..."
+fi
+
+echo ""
+echo "Setup complete! You can now use:"
+echo "  - ./scripts/lint      : Run linting and type checking"
+echo "  - ./scripts/typecheck : Run type checking only"
+echo "  - git commit          : Will automatically run checks before committing"
