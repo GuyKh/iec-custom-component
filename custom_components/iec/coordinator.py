@@ -118,6 +118,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             session=aiohttp_client.async_get_clientsession(hass, family=socket.AF_INET),
         )
         self._first_load: bool = True
+        self._api_rate_limiter = asyncio.Semaphore(3)
 
         @callback
         def _dummy_listener() -> None:
@@ -132,6 +133,48 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
     async def async_unload(self):
         """Unload the coordinator, cancel any pending tasks."""
         _LOGGER.info("Coordinator unloaded successfully.")
+
+    async def _execute_with_rate_limit(
+        self,
+        coro,
+        max_retries: int = 3,
+        base_delay: float = 1.0,
+    ):
+        """Execute an API call with rate limiting and retry logic.
+
+        Args:
+            coro: The coroutine to execute
+            max_retries: Maximum number of retries
+            base_delay: Base delay in seconds for exponential backoff
+
+        Returns:
+            The result of the coroutine
+
+        Raises:
+            The last exception if all retries fail
+        """
+        last_exception = None
+        for attempt in range(max_retries):
+            async with self._api_rate_limiter:
+                try:
+                    return await coro
+                except IECError as e:
+                    last_exception = e
+                    if attempt < max_retries - 1:
+                        delay = base_delay * (2**attempt)
+                        _LOGGER.warning(
+                            "API call failed (attempt %d/%d), retrying in %.1fs: %s",
+                            attempt + 1,
+                            max_retries,
+                            delay,
+                            e,
+                        )
+                        await asyncio.sleep(delay)
+                    else:
+                        _LOGGER.error(
+                            "API call failed after %d attempts: %s", max_retries, e
+                        )
+        raise last_exception
 
     async def _get_devices_by_contract_id(self, contract_id) -> list[Device]:
         devices = self._devices_by_contract_id.get(contract_id)
