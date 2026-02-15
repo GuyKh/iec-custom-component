@@ -42,7 +42,7 @@ from iec_api.models.remote_reading import (
     RemoteReadingResponse,
 )
 
-from .commons import TIMEZONE, find_reading_by_date
+from .commons import find_reading_by_date, localize_datetime
 from .const import (
     ACCESS_TOKEN_EXPIRATION_TIME,
     ACCESS_TOKEN_ISSUED_AT,
@@ -523,7 +523,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             for c in all_contracts
             if c.status == 1 and int(c.contract_id) in self._contract_ids
         }
-        localized_today = TIMEZONE.localize(datetime.now())
+        localized_today = localize_datetime(datetime.now())
         localized_first_of_month = localized_today.replace(day=1)
         kwh_tariff = await self._get_kwh_tariff()
         kva_tariff = await self._get_kva_tariff()
@@ -845,7 +845,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         )
         devices = await self._get_devices_by_contract_id(contract_id)
         kwh_price = await self._get_kwh_tariff()
-        localized_today = TIMEZONE.localize(datetime.now())
+        localized_today = localize_datetime(datetime.now())
 
         if not devices:
             _LOGGER.error(
@@ -880,7 +880,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     # Fetching the last reading from either the installation date or a month ago
                     month_ago_time = max(
                         month_ago_time,
-                        TIMEZONE.localize(
+                        localize_datetime(
                             datetime.combine(
                                 readings.meter_start_date, datetime.min.time()
                             )
@@ -1001,7 +1001,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             new_readings: list[PeriodConsumption] = filter(
                 lambda reading: (
                     reading.interval
-                    >= TIMEZONE.localize(datetime.fromtimestamp(last_stat_time))
+                    >= localize_datetime(datetime.fromtimestamp(last_stat_time))
                 ),
                 readings.meter_list[0].period_consumptions,
             )
@@ -1014,7 +1014,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             )
             readings_by_hour: dict[datetime, float] = {}
             if last_stat_req_hour and last_stat_req_hour.tzinfo is None:
-                last_stat_req_hour = TIMEZONE.localize(last_stat_req_hour)
+                last_stat_req_hour = localize_datetime(last_stat_req_hour)
 
             for key, group in grouped_new_readings_by_hour:
                 group_list = list(group)
@@ -1145,7 +1145,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     "Couldn't get Last Meter Read, WILL NOT calculate the usage part in estimated bill."
                 )
                 last_meter_read = None
-                last_meter_read_date = TIMEZONE.localize(datetime.now()).date()
+                last_meter_read_date = localize_datetime(datetime.now()).date()
                 last_invoice = EMPTY_INVOICE
             else:
                 last_meter_read = last_meter_reading.reading
@@ -1228,7 +1228,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         consumption_price = round(future_consumption * kwh_tariff, 2)
         total_days = 0
 
-        today = TIMEZONE.localize(datetime.now())
+        today = localize_datetime(datetime.now())
 
         if last_invoice != EMPTY_INVOICE:
             current_date = last_meter_read_date + timedelta(days=1)
