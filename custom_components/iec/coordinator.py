@@ -199,10 +199,10 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     "Fetching kWh tariff was cancelled; using 0.0 and continuing"
                 )
                 self._kwh_tariff = 0.0
-            except IECError as e:
-                _LOGGER.exception("Failed fetching kWh Tariff", e)
-            except Exception as e:
-                _LOGGER.exception("Unexpected error fetching kWh Tariff", e)
+            except IECError:
+                _LOGGER.exception("Failed fetching kWh Tariff")
+            except Exception:
+                _LOGGER.exception("Unexpected error fetching kWh Tariff")
 
             # Fallback: try IEC calculators API when main call failed or returned 0.0
             if not self._kwh_tariff or self._kwh_tariff == 0.0:
@@ -224,10 +224,10 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     "Fetching kVA tariff was cancelled; using 0.0 and continuing"
                 )
                 self._kva_tariff = 0.0
-            except IECError as e:
-                _LOGGER.exception("Failed fetching KVA Tariff from IEC API", e)
-            except Exception as e:
-                _LOGGER.exception("Unexpected error fetching KVA Tariff", e)
+            except IECError:
+                _LOGGER.exception("Failed fetching KVA Tariff from IEC API")
+            except Exception:
+                _LOGGER.exception("Unexpected error fetching KVA Tariff")
 
             # Fallback: try IEC calculators API when main call failed or returned 0.0
             if not self._kva_tariff or self._kva_tariff == 0.0:
@@ -336,8 +336,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             try:
                 account = await self.api.get_default_account()
                 self._account_id = account.id
-            except IECError as e:
-                _LOGGER.exception("Failed fetching Account", e)
+            except IECError:
+                _LOGGER.exception("Failed fetching Account")
         return self._account_id
 
     async def _get_connection_size(self, account_id) -> str | None:
@@ -346,8 +346,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 self._connection_size = (
                     await self.api.get_masa_connection_size_from_masa(account_id)
                 )
-            except IECError as e:
-                _LOGGER.exception("Failed fetching Masa Connection Size", e)
+            except IECError:
+                _LOGGER.exception("Failed fetching Masa Connection Size")
         return self._connection_size
 
     async def _get_power_size(self, connection_size) -> float:
@@ -396,12 +396,11 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     str(contract_id),
                 )
                 self._readings[key] = reading
-            except IECError as e:
+            except IECError:
                 _LOGGER.exception(
                     f"Failed fetching reading for Contract: {contract_id},"
                     f"date: {reading_date.strftime('%d-%m-%Y')}, "
-                    f"resolution: {resolution}",
-                    e,
+                    f"resolution: {resolution}"
                 )
         return reading
 
@@ -495,8 +494,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     "Fetching customer was cancelled; using empty BP number and skipping contracts"
                 )
                 self._bp_number = None
-            except IECError as e:
-                _LOGGER.exception("Failed fetching customer", e)
+            except IECError:
+                _LOGGER.exception("Failed fetching customer")
                 self._bp_number = None
 
         try:
@@ -508,8 +507,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 "Fetching contracts was cancelled; continuing with empty contracts"
             )
             all_contracts = []
-        except IECError as e:
-            _LOGGER.exception("Failed fetching contracts", e)
+        except IECError:
+            _LOGGER.exception("Failed fetching contracts")
             all_contracts = []
         if not self._contract_ids:
             self._contract_ids = [
@@ -567,8 +566,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     "Fetching invoices was cancelled; continuing without invoices"
                 )
                 billing_invoices = None
-            except IECError as e:
-                _LOGGER.exception("Failed fetching invoices", e)
+            except IECError:
+                _LOGGER.exception("Failed fetching invoices")
                 billing_invoices = None
 
             if (
@@ -754,7 +753,9 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                             last_invoice,
                         )
                     except Exception as e:
-                        _LOGGER.warn("Failed to calculate estimated next bill", e)
+                        _LOGGER.warning(
+                            "Failed to calculate estimated next bill", exc_info=e
+                        )
                         estimated_bill = 0
                         consumption_price = 0
                         total_days = 0
