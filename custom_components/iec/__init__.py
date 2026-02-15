@@ -29,17 +29,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    # Register the debug service
-    async def handle_debug_get_coordinator_data(call) -> None:  # noqa: ANN001 ARG001
-        # Log or return coordinator data
-        data = iec_coordinator.data
-        _LOGGER.info("Coordinator data: %s", data)
-        hass.bus.async_fire("custom_component_debug_event", {"data": data})
-
-    hass.services.async_register(
-        DOMAIN, "debug_get_coordinator_data", handle_debug_get_coordinator_data
-    )
-
     return True
 
 
