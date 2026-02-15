@@ -280,8 +280,10 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return self.async_abort(reason="reauth_successful")
 
         if not client:
+            assert self.reauth_entry is not None
             self.client = IecClient(
-                self.data[CONF_USER_ID], async_create_clientsession(self.hass)
+                self.reauth_entry.data[CONF_USER_ID],
+                async_create_clientsession(self.hass),
             )
             client = self.client
 
