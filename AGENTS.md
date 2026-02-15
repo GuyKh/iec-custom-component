@@ -18,7 +18,7 @@ This is a Home Assistant custom component for the Israel Electric Corporation (I
 
 ## Tech Stack
 
-- **Python**: 3.10+
+- **Python**: 3.12+
 - **Home Assistant**: 2025.1.4+
 - **iec-api**: 0.5.3 (Python client for IEC API)
 - **Linting**: ruff (with Home Assistant rules)
@@ -66,6 +66,21 @@ logger:
 **Reading logs:**
 - Terminal where `./script/develop` runs
 - `config/home-assistant.log`
+
+## Workflow
+
+### Starting New Work
+
+**When starting a new task, always ask the user first:**
+- Should I switch to `main` branch and rebase?
+- Or should I work from the current branch?
+
+Then checkout a new feature branch before beginning work. Never work directly on `main` or stale branches.
+
+### Branch Naming Convention
+- Features: `feature/description`
+- Bug fixes: `fix/description`
+- Documentation: `docs/description`
 
 ## Code Style
 
