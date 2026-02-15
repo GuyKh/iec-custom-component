@@ -21,7 +21,7 @@ from homeassistant.helpers.typing import StateType
 from iec_api.models.invoice import Invoice
 from iec_api.models.remote_reading import PeriodConsumption
 
-from .commons import TIMEZONE, IecEntityType, find_reading_by_date
+from .commons import TIMEZONE, IecEntityType, find_reading_by_date, localize_datetime
 from .const import (
     ACCESS_TOKEN_EXPIRATION_TIME,
     ACCESS_TOKEN_ISSUED_AT,
@@ -206,7 +206,7 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
                 data[DAILY_READINGS_DICT_NAME][
                     data[ATTRIBUTES_DICT_NAME][METER_ID_ATTR_NAME]
                 ],
-                TIMEZONE.localize(datetime.now()),
+                localize_datetime(datetime.now()),
             ).consumption
             if (
                 data[DAILY_READINGS_DICT_NAME]
@@ -227,7 +227,7 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
                     data[DAILY_READINGS_DICT_NAME][
                         data[ATTRIBUTES_DICT_NAME][METER_ID_ATTR_NAME]
                     ],
-                    TIMEZONE.localize(datetime.now()) - timedelta(days=1),
+                    localize_datetime(datetime.now()) - timedelta(days=1),
                 ).consumption
             )
             if (data[DAILY_READINGS_DICT_NAME])
@@ -249,7 +249,7 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
                             data[ATTRIBUTES_DICT_NAME][METER_ID_ATTR_NAME]
                         ]
                         if reading.interval.month
-                        == TIMEZONE.localize(datetime.now()).month
+                        == localize_datetime(datetime.now()).month
                     ]
                 )
             )

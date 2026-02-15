@@ -1,16 +1,29 @@
 """IEC common functions."""
 
-import pytz
-
-from datetime import date
+from datetime import date, datetime
 from enum import Enum
+from zoneinfo import ZoneInfo
 
 from homeassistant.helpers.device_registry import DeviceInfo
 from iec_api.models.remote_reading import PeriodConsumption
 
 from custom_components.iec import DOMAIN
 
-TIMEZONE = pytz.timezone("Asia/Jerusalem")
+TIMEZONE = ZoneInfo("Asia/Jerusalem")
+
+
+def localize_datetime(dt: datetime) -> datetime:
+    """Localize a datetime to the IEC timezone.
+
+    Args:
+        dt: A naive datetime to localize.
+
+    Returns:
+        A timezone-aware datetime in Asia/Jerusalem timezone.
+    """
+    if dt.tzinfo is not None:
+        return dt
+    return dt.replace(tzinfo=TIMEZONE)
 
 
 def find_reading_by_date(daily_reading: PeriodConsumption, desired_date: date) -> bool:
