@@ -1,5 +1,5 @@
 colorlog>=6.8.2
 homeassistant==2024.2.0
-iec-api==0.5.2
+iec-api==0.5.3
 pip>=21.0
 ruff>=0.5.6
