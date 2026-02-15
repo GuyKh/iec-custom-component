@@ -152,6 +152,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
         Raises:
             The last exception if all retries fail
+
         """
         last_exception = None
         for attempt in range(max_retries):
