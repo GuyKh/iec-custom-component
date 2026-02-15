@@ -20,6 +20,7 @@ def localize_datetime(dt: datetime) -> datetime:
 
     Returns:
         A timezone-aware datetime in Asia/Jerusalem timezone.
+
     """
     if dt.tzinfo is not None:
         return dt

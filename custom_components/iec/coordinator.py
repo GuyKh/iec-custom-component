@@ -42,7 +42,7 @@ from iec_api.models.remote_reading import (
     RemoteReadingResponse,
 )
 
-from .commons import TIMEZONE, find_reading_by_date, localize_datetime
+from .commons import find_reading_by_date, localize_datetime
 from .const import (
     ACCESS_TOKEN_EXPIRATION_TIME,
     ACCESS_TOKEN_ISSUED_AT,
