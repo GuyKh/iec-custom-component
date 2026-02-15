@@ -552,6 +552,9 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         for contract_id in self._contract_ids:
             # Because IEC API provides historical usage/cost with a delay of a couple of days
             # we need to insert data into statistics.
+            # Add small delay between tasks to avoid API flooding
+            if self._contract_ids.index(contract_id) > 0:
+                await asyncio.sleep(1)
             self.hass.async_create_task(
                 self._insert_statistics(
                     contract_id, contracts.get(contract_id).smart_meter
