@@ -733,6 +733,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                                 _LOGGER.warning(
                                     "Failed fetching FutureConsumption, data in IEC API is corrupted"
                                 )
+                                future_consumption[device.device_number] = None
 
                     try:
                         (
@@ -1201,7 +1202,9 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         power_size,
         last_invoice,
     ):
-        future_consumption_info: FutureConsumptionInfo = future_consumptions[meter_id]
+        future_consumption_info: FutureConsumptionInfo | None = future_consumptions.get(
+            meter_id
+        )
         future_consumption = 0
 
         if last_meter_read and future_consumption_info:
