@@ -415,6 +415,36 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 )
         return reading
 
+    @staticmethod
+    def _extract_valid_future_consumption(
+        reading: RemoteReadingResponse | None,
+    ) -> FutureConsumptionInfo | None:
+        """Return normalized future consumption data if the IEC payload is usable."""
+        if not reading or not reading.meter_list:
+            return None
+
+        meter = reading.meter_list[0]
+        future_info = meter.future_consumption_info
+        if not future_info:
+            return None
+
+        # IEC sometimes returns zeroed futureConsumptionInfo while meter.total_import
+        # still contains a valid value for the same response.
+        if (
+            not future_info.total_import
+            and meter.total_import
+            and meter.total_import > 0
+        ):
+            future_info.total_import = meter.total_import
+
+        if (
+            future_info.future_consumption
+            and future_info.future_consumption > 0
+        ) or (future_info.total_import and future_info.total_import > 0):
+            return future_info
+
+        return None
+
     async def _verify_daily_readings_exist(
         self,
         daily_readings: dict[str, list[PeriodConsumption]],
@@ -668,6 +698,13 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                         daily_readings[device.device_number] = (
                             remote_reading.meter_list[0].period_consumptions
                         )
+                        monthly_future_consumption = (
+                            self._extract_valid_future_consumption(remote_reading)
+                        )
+                        if monthly_future_consumption:
+                            future_consumption[device.device_number] = (
+                                monthly_future_consumption
+                            )
                     else:
                         _LOGGER.warning(
                             "No %s readings returned for device %s in contract %s on %s",
@@ -700,25 +737,16 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                         self._today_readings[today_reading_key] = today_reading
 
                     # fallbacks for future consumption since IEC api is broken :/
-                    if (
-                        not future_consumption.get(device.device_number)
-                        or not future_consumption[
-                            device.device_number
-                        ].future_consumption
-                    ):
-                        if (
-                            self._today_readings.get(today_reading_key)
-                            and self._today_readings.get(today_reading_key).meter_list[
-                                0
-                            ]
-                            and self._today_readings.get(today_reading_key)
-                            .meter_list[0]
-                            .future_consumption_info.future_consumption
-                        ):
-                            future_consumption[device.device_number] = (
+                    if not future_consumption.get(device.device_number):
+                        today_future_consumption = (
+                            self._extract_valid_future_consumption(
                                 self._today_readings.get(today_reading_key)
-                                .meter_list[0]
-                                .future_consumption_info
+                            )
+                        )
+
+                        if today_future_consumption:
+                            future_consumption[device.device_number] = (
+                                today_future_consumption
                             )
                         else:
                             req_date = localized_today - timedelta(days=2)
@@ -729,15 +757,15 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                                 req_date,
                                 ReadingResolution.DAILY,
                             )
+                            two_days_ago_future_consumption = (
+                                self._extract_valid_future_consumption(
+                                    two_days_ago_reading
+                                )
+                            )
 
-                            if (
-                                two_days_ago_reading
-                                and two_days_ago_reading.meter_list[0].total_import
-                            ):  # use total_import as validation that reading OK:
+                            if two_days_ago_future_consumption:
                                 future_consumption[device.device_number] = (
-                                    two_days_ago_reading.meter_list[
-                                        0
-                                    ].future_consumption_info
+                                    two_days_ago_future_consumption
                                 )
                             else:
                                 _LOGGER.warning(
@@ -1237,6 +1265,11 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 future_consumption = (
                     future_consumption_info.total_import - last_meter_read
                 )
+            elif (
+                future_consumption_info.future_consumption
+                and future_consumption_info.future_consumption > 0
+            ):
+                future_consumption = future_consumption_info.future_consumption
             else:
                 _LOGGER.warn(
                     f"Failed to calculate Future Consumption for meter {meter_id} "
