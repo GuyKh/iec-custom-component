@@ -12,6 +12,9 @@
             "access_token_issued_at": {
                 "name": "Access Token Issued At"
             },
+            "elec_forecasted_usage": {
+                "name": "Next electric bill forecasted usage {multi_contract}"
+            },
             "elec_forecasted_cost": {
                 "name": "Next electric bill forecasted cost {multi_contract}",
                 "state_attributes": {

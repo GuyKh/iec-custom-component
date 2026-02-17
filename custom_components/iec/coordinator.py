@@ -91,6 +91,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         super().__init__(
             hass,
             _LOGGER,
+            config_entry=config_entry,
             name="Iec",
             # Data is updated daily on IEC.
             # Refresh every 1h to be at most 5h behind.
@@ -127,10 +128,14 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         # Needed when the _async_update_data below returns {} for utilities that don't provide
         # forecast, which results to no sensors added, no registered listeners, and thus
         # _async_update_data not periodically getting called which is needed for _insert_statistics.
-        self.async_add_listener(_dummy_listener)
+        self._dummy_listener_unsub = self.async_add_listener(_dummy_listener)
 
     async def async_unload(self):
         """Unload the coordinator, cancel any pending tasks."""
+        if self._dummy_listener_unsub is not None:
+            self._dummy_listener_unsub()
+            self._dummy_listener_unsub = None
+        await self.async_shutdown()
         _LOGGER.info("Coordinator unloaded successfully.")
 
     async def _get_devices_by_contract_id(self, contract_id) -> list[Device]:
@@ -876,13 +881,18 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     ReadingResolution.MONTHLY,
                 )
 
-                if readings and readings.meter_start_date:
+                if (
+                    readings
+                    and readings.meter_list
+                    and readings.meter_list[0].meter_start_date
+                ):
                     # Fetching the last reading from either the installation date or a month ago
                     month_ago_time = max(
                         month_ago_time,
                         localize_datetime(
                             datetime.combine(
-                                readings.meter_start_date, datetime.min.time()
+                                readings.meter_list[0].meter_start_date,
+                                datetime.min.time(),
                             )
                         ),
                     )
@@ -907,7 +917,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             else:
                 last_stat_time = last_stat[consumption_statistic_id][0]["start"]
                 # API returns daily data, so need to increase the start date by 4 hrs to get the next day
-                from_date = datetime.fromtimestamp(last_stat_time)
+                from_date = localize_datetime(datetime.fromtimestamp(last_stat_time))
                 _LOGGER.debug(
                     f"[IEC Statistics] Last statistics are from {from_date.strftime('%Y-%m-%d %H:%M:%S')}"
                 )
@@ -922,6 +932,16 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     from_date = localized_today.replace(
                         hour=1, minute=0, second=0, microsecond=0
                     )
+
+                min_from_date = (localized_today - timedelta(days=30)).replace(
+                    hour=1, minute=0, second=0, microsecond=0
+                )
+                if from_date < min_from_date:
+                    _LOGGER.debug(
+                        "[IEC Statistics] Last statistics are too old, limiting fetch window to %s",
+                        min_from_date.strftime("%Y-%m-%d %H:%M:%S"),
+                    )
+                    from_date = min_from_date
 
                 _LOGGER.debug(
                     f"[IEC Statistics] Fetching consumption from {from_date.strftime('%Y-%m-%d %H:%M:%S')}"
@@ -949,7 +969,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 continue
 
             last_stat_hour = (
-                datetime.fromtimestamp(last_stat_time)
+                localize_datetime(datetime.fromtimestamp(last_stat_time))
                 if last_stat_time
                 else readings.meter_list[0].period_consumptions[0].interval
             )
@@ -1214,10 +1234,10 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 )
             else:
                 _LOGGER.warn(
-                    f"Failed to calculate Future Consumption, Assuming last meter read \
-                    ({last_meter_read}) as full consumption"
+                    f"Failed to calculate Future Consumption for meter {meter_id} "
+                    f"(missing total_import), defaulting forecasted consumption to 0"
                 )
-                future_consumption = last_meter_read
+                future_consumption = 0
 
         kva_price = power_size * kva_tariff / 365
 

@@ -95,7 +95,6 @@ Then checkout a new feature branch before beginning work. Never work directly on
 **Validation commands:**
 ```bash
 ./scripts/lint        # Run ruff linter (auto-fixes where possible)
-./scripts/typecheck   # Run mypy type checker
 ```
 
 ## Key Patterns
@@ -175,10 +174,15 @@ When iec-api updates:
 
 ## Validation
 
+**After every code change, run:**
+```bash
+ruff check .
+ruff format .
+```
+
 **Before committing, run:**
 ```bash
 ./scripts/lint        # Auto-format and fix linting issues
-./scripts/typecheck   # Type checking
 ```
 
 **Configured tools:**
