@@ -114,9 +114,12 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         self._readings = {}
         self._account_id: str | None = None
         self._connection_size: str | None = None
+        self._api_session = aiohttp_client.async_create_clientsession(
+            hass, family=socket.AF_INET
+        )
         self.api = IecClient(
             self._entry_data[CONF_USER_ID],
-            session=aiohttp_client.async_get_clientsession(hass, family=socket.AF_INET),
+            session=self._api_session,
         )
         self._first_load: bool = True
 
@@ -136,6 +139,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             self._dummy_listener_unsub()
             self._dummy_listener_unsub = None
         await self.async_shutdown()
+        if not self._api_session.closed:
+            await self._api_session.close()
         _LOGGER.info("Coordinator unloaded successfully.")
 
     async def _get_devices_by_contract_id(self, contract_id) -> list[Device]:
