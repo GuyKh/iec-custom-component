@@ -264,14 +264,27 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         state_class=SensorStateClass.TOTAL_INCREASING,
         suggested_display_precision=3,
         value_fn=lambda data: (
-            (
-                data[FUTURE_CONSUMPTIONS_DICT_NAME][
+            data[FUTURE_CONSUMPTIONS_DICT_NAME][
+                data[ATTRIBUTES_DICT_NAME][METER_ID_ATTR_NAME]
+            ].total_import
+            if (
+                data[FUTURE_CONSUMPTIONS_DICT_NAME]
+                and data[FUTURE_CONSUMPTIONS_DICT_NAME].get(
+                    data[ATTRIBUTES_DICT_NAME][METER_ID_ATTR_NAME]
+                )
+                and data[FUTURE_CONSUMPTIONS_DICT_NAME][
                     data[ATTRIBUTES_DICT_NAME][METER_ID_ATTR_NAME]
                 ].total_import
-                or 0
+                is not None
             )
-            if (data[FUTURE_CONSUMPTIONS_DICT_NAME])
-            else None
+            else (
+                data[INVOICE_DICT_NAME].meter_readings[0].reading
+                if (
+                    data[INVOICE_DICT_NAME] != EMPTY_INVOICE
+                    and data[INVOICE_DICT_NAME].meter_readings
+                )
+                else None
+            )
         ),
     ),
 )

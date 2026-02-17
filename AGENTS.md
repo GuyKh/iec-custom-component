@@ -175,6 +175,13 @@ When iec-api updates:
 
 ## Validation
 
+**After every code change, run:**
+```bash
+ruff check .
+ruff format .
+./scripts/typecheck   # Run mypy type checker
+```
+
 **Before committing, run:**
 ```bash
 ./scripts/lint        # Auto-format and fix linting issues
