@@ -48,6 +48,7 @@ from .const import (
     ACCESS_TOKEN_ISSUED_AT,
     ATTRIBUTES_DICT_NAME,
     CONF_BP_NUMBER,
+    CONF_BP_NUMBER_TO_CONTRACT,
     CONF_SELECTED_CONTRACTS,
     CONF_USER_ID,
     CONTRACT_DICT_NAME,
@@ -100,7 +101,17 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         _LOGGER.debug("Initializing IEC Coordinator")
         self._config_entry = config_entry
         self._bp_number = config_entry.data.get(CONF_BP_NUMBER)
-        self._contract_ids = config_entry.data.get(CONF_SELECTED_CONTRACTS)
+        self._contract_ids: list[int] = [
+            int(contract_id)
+            for contract_id in config_entry.data.get(CONF_SELECTED_CONTRACTS, [])
+        ]
+        self._bp_number_to_contract = self._normalize_bp_number_to_contract(
+            config_entry.data.get(CONF_BP_NUMBER_TO_CONTRACT)
+        )
+        self._contract_to_bp_number: dict[int, str] = {}
+        for bp_number, contract_ids in self._bp_number_to_contract.items():
+            for contract_id in contract_ids:
+                self._contract_to_bp_number[contract_id] = bp_number
         self._entry_data = config_entry.data
         self._today_readings = {}
         self._devices_by_contract_id = {}
@@ -140,6 +151,137 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             self._dummy_listener_unsub = None
         await self.async_shutdown()
         _LOGGER.info("Coordinator unloaded successfully.")
+
+    @staticmethod
+    def _normalize_bp_number_to_contract(raw_map: Any) -> dict[str, list[int]]:
+        if not isinstance(raw_map, dict):
+            return {}
+
+        normalized: dict[str, list[int]] = {}
+        for bp_number, contract_ids in raw_map.items():
+            if not bp_number or not isinstance(contract_ids, list):
+                continue
+            normalized_contracts = sorted(
+                {
+                    int(contract_id)
+                    for contract_id in contract_ids
+                    if str(contract_id).strip()
+                }
+            )
+            if normalized_contracts:
+                normalized[str(bp_number)] = normalized_contracts
+        return normalized
+
+    def _persist_bp_number_to_contract_mapping(self) -> None:
+        mapping = {
+            bp_number: sorted(contract_ids)
+            for bp_number, contract_ids in self._bp_number_to_contract.items()
+            if contract_ids
+        }
+        if not mapping:
+            return
+
+        new_data = {**self._entry_data, CONF_BP_NUMBER_TO_CONTRACT: mapping}
+        all_selected_contracts_mapped = all(
+            contract_id in self._contract_to_bp_number for contract_id in self._contract_ids
+        )
+        if all_selected_contracts_mapped:
+            new_data.pop(CONF_BP_NUMBER, None)
+            self._bp_number = None
+
+        if new_data != self._entry_data:
+            self.hass.config_entries.async_update_entry(
+                entry=self._config_entry, data=new_data
+            )
+            self._entry_data = new_data
+
+    def _set_contract_bp_mapping(self, contract_id: int, bp_number: str) -> None:
+        existing_contracts = set(self._bp_number_to_contract.get(bp_number, []))
+        if contract_id in existing_contracts:
+            return
+
+        existing_contracts.add(contract_id)
+        self._bp_number_to_contract[bp_number] = sorted(existing_contracts)
+        self._contract_to_bp_number[contract_id] = bp_number
+
+    async def _resolve_bp_number_for_contract(self, contract_id: int) -> str | None:
+        mapped_bp_number = self._contract_to_bp_number.get(contract_id)
+        if mapped_bp_number:
+            return mapped_bp_number
+
+        try:
+            customer_mobile = await self.api.get_customer_mobile(str(contract_id))
+            if customer_mobile and customer_mobile.customer:
+                mapped_bp_number = customer_mobile.customer.bp_number
+        except asyncio.CancelledError:
+            return None
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug(
+                "Failed resolving bp_number for contract %s via customer_mobile: %s",
+                contract_id,
+                err,
+            )
+            mapped_bp_number = None
+
+        if not mapped_bp_number and self._bp_number:
+            mapped_bp_number = self._bp_number
+
+        if mapped_bp_number:
+            self._set_contract_bp_mapping(contract_id, mapped_bp_number)
+            self._persist_bp_number_to_contract_mapping()
+
+        return mapped_bp_number
+
+    async def _load_selected_contracts(self) -> dict[int, Contract]:
+        if not self._bp_number and not self._bp_number_to_contract:
+            try:
+                customer = await self.api.get_customer()
+                self._bp_number = customer.bp_number
+            except asyncio.CancelledError:
+                _LOGGER.warning(
+                    "Fetching customer was cancelled; using empty BP number and skipping contracts"
+                )
+                self._bp_number = None
+            except IECError as e:
+                _LOGGER.exception("Failed fetching customer", e)
+                self._bp_number = None
+
+        for contract_id in self._contract_ids:
+            if contract_id not in self._contract_to_bp_number:
+                await self._resolve_bp_number_for_contract(contract_id)
+
+        bp_numbers = set(self._bp_number_to_contract.keys())
+        if not bp_numbers and self._bp_number:
+            bp_numbers = {self._bp_number}
+
+        all_contracts: list[Contract] = []
+        for bp_number in bp_numbers:
+            try:
+                contracts_for_bp = await self.api.get_contracts(bp_number)
+                all_contracts.extend(contracts_for_bp)
+                for contract in contracts_for_bp:
+                    self._set_contract_bp_mapping(int(contract.contract_id), bp_number)
+            except asyncio.CancelledError:
+                _LOGGER.warning(
+                    "Fetching contracts was cancelled for BP %s; continuing",
+                    bp_number,
+                )
+            except IECError:
+                _LOGGER.exception("Failed fetching contracts for BP %s", bp_number)
+
+        if not self._contract_ids:
+            self._contract_ids = [
+                int(contract.contract_id)
+                for contract in all_contracts
+                if contract.status == 1
+            ]
+
+        self._persist_bp_number_to_contract_mapping()
+        return {
+            int(c.contract_id): c
+            for c in all_contracts
+            if c.status == 1 and int(c.contract_id) in self._contract_ids
+        }
 
     async def _get_devices_by_contract_id(self, contract_id) -> list[Device]:
         devices = self._devices_by_contract_id.get(contract_id)
@@ -524,43 +666,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
     async def _update_data(
         self,
     ) -> dict[str, dict[str, Any]]:
-        if not self._bp_number:
-            try:
-                customer = await self.api.get_customer()
-                self._bp_number = customer.bp_number
-            except asyncio.CancelledError:
-                _LOGGER.warning(
-                    "Fetching customer was cancelled; using empty BP number and skipping contracts"
-                )
-                self._bp_number = None
-            except IECError as e:
-                _LOGGER.exception("Failed fetching customer", e)
-                self._bp_number = None
-
-        try:
-            all_contracts: list[Contract] = (
-                await self.api.get_contracts(self._bp_number) if self._bp_number else []
-            )
-        except asyncio.CancelledError:
-            _LOGGER.warning(
-                "Fetching contracts was cancelled; continuing with empty contracts"
-            )
-            all_contracts = []
-        except IECError as e:
-            _LOGGER.exception("Failed fetching contracts", e)
-            all_contracts = []
-        if not self._contract_ids:
-            self._contract_ids = [
-                int(contract.contract_id)
-                for contract in all_contracts
-                if contract.status == 1
-            ]
-
-        contracts: dict[int, Contract] = {
-            int(c.contract_id): c
-            for c in all_contracts
-            if c.status == 1 and int(c.contract_id) in self._contract_ids
-        }
+        contracts: dict[int, Contract] = await self._load_selected_contracts()
         localized_today = localize_datetime(datetime.now())
         localized_first_of_month = localized_today.replace(day=1)
         kwh_tariff = await self._get_kwh_tariff()
@@ -579,7 +685,11 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             STATICS_DICT_NAME: {
                 STATIC_KWH_TARIFF: kwh_tariff,
                 STATIC_KVA_TARIFF: kva_tariff,
-                STATIC_BP_NUMBER: self._bp_number,
+                STATIC_BP_NUMBER: (
+                    self._bp_number
+                    if self._bp_number
+                    else (next(iter(self._bp_number_to_contract), None))
+                ),
             },
         }
 
@@ -588,26 +698,42 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         _LOGGER.debug(f"All Contract Ids: {list(contracts.keys())}")
 
         for contract_id in self._contract_ids:
+            contract = contracts.get(contract_id)
+            if not contract:
+                _LOGGER.debug(
+                    "Contract %s is selected but not available in active contracts",
+                    contract_id,
+                )
+                continue
+
+            bp_number_for_contract = await self._resolve_bp_number_for_contract(
+                contract_id
+            )
             # Because IEC API provides historical usage/cost with a delay of a couple of days
             # we need to insert data into statistics.
             self.hass.async_create_task(
-                self._insert_statistics(
-                    contract_id, contracts.get(contract_id).smart_meter
-                )
+                self._insert_statistics(contract_id, contract.smart_meter)
             )
 
-            try:
-                billing_invoices = await self.api.get_billing_invoices(
-                    self._bp_number, contract_id
-                )
-            except asyncio.CancelledError:
+            if not bp_number_for_contract:
                 _LOGGER.warning(
-                    "Fetching invoices was cancelled; continuing without invoices"
+                    "Missing bp_number for contract %s; skipping invoices fetch",
+                    contract_id,
                 )
                 billing_invoices = None
-            except IECError as e:
-                _LOGGER.exception("Failed fetching invoices", e)
-                billing_invoices = None
+            else:
+                try:
+                    billing_invoices = await self.api.get_billing_invoices(
+                        bp_number_for_contract, contract_id
+                    )
+                except asyncio.CancelledError:
+                    _LOGGER.warning(
+                        "Fetching invoices was cancelled; continuing without invoices"
+                    )
+                    billing_invoices = None
+                except IECError as e:
+                    _LOGGER.exception("Failed fetching invoices", e)
+                    billing_invoices = None
 
             if (
                 billing_invoices
@@ -630,8 +756,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             future_consumption: dict[str, FutureConsumptionInfo | None] | None = {}
             daily_readings: dict[str, list[PeriodConsumption] | None] | None = {}
 
-            is_smart_meter = contracts.get(contract_id).smart_meter
-            is_private_producer = contracts.get(contract_id).from_private_producer
+            is_smart_meter = contract.smart_meter
+            is_private_producer = contract.from_private_producer
             attributes_to_add = {
                 CONTRACT_ID_ATTR_NAME: str(contract_id),
                 IS_SMART_METER_ATTR_NAME: is_smart_meter,
@@ -783,6 +909,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                             estimated_kwh_consumption,
                         ) = await self._estimate_bill(
                             contract_id,
+                            bp_number_for_contract,
                             device.device_number,
                             is_private_producer,
                             future_consumption,
@@ -851,6 +978,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 self.hass.config_entries.async_update_entry(
                     entry=self._config_entry, data=new_data
                 )
+                self._entry_data = new_data
         except IECError as err:
             raise ConfigEntryAuthFailed from err
 
@@ -1141,6 +1269,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
     async def _estimate_bill(
         self,
         contract_id,
+        bp_number,
         device_number,
         is_private_producer,
         future_consumption,
@@ -1187,9 +1316,16 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 connection_size = None
 
         if is_private_producer or not last_meter_read:
-            last_meter_reading = await self._get_last_meter_reading(
-                self._bp_number, contract_id, device_number
-            )
+            if not bp_number:
+                _LOGGER.warning(
+                    "Missing bp_number for contract %s; cannot fetch last meter reading",
+                    contract_id,
+                )
+                last_meter_reading = None
+            else:
+                last_meter_reading = await self._get_last_meter_reading(
+                    bp_number, contract_id, device_number
+                )
 
             if not last_meter_reading:
                 _LOGGER.warning(

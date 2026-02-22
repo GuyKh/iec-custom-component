@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import asyncio
+from collections import defaultdict
 from collections.abc import Mapping
 from typing import Any
 
@@ -15,12 +16,14 @@ from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 from homeassistant.helpers.config_validation import multi_select
 from iec_api.iec_client import IecClient
+from iec_api.models.contract import Contract
 from iec_api.models.exceptions import IECError
 from iec_api.models.jwt import JWT
 
 from .const import (
     CONF_AVAILABLE_CONTRACTS,
     CONF_BP_NUMBER,
+    CONF_BP_NUMBER_TO_CONTRACT,
     CONF_SELECTED_CONTRACTS,
     CONF_TOTP_SECRET,
     CONF_USER_ID,
@@ -28,6 +31,7 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+CONTRACT_OPTIONS_KEY = "available_contract_options"
 
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
@@ -72,6 +76,86 @@ async def _validate_login(
         errors["base"] = "invalid_auth"
 
     return errors
+
+
+def _build_contract_label(contract_id: int, address: str | None) -> str:
+    normalized_address = address or "Unknown Address"
+    return f"Contract {contract_id} - {normalized_address}"
+
+
+def _filter_bp_number_to_contract(
+    bp_number_to_contract: dict[str, list[int]], selected_contracts: list[int]
+) -> dict[str, list[int]]:
+    selected_set = set(selected_contracts)
+    filtered: dict[str, list[int]] = {}
+    for bp_number, contracts in bp_number_to_contract.items():
+        matched = sorted(contract for contract in contracts if contract in selected_set)
+        if matched:
+            filtered[bp_number] = matched
+    return filtered
+
+
+async def _build_bp_number_to_contract(
+    client: IecClient, primary_bp_number: str
+) -> tuple[dict[str, list[int]], dict[str, str]]:
+    bp_number_to_contract: dict[str, set[int]] = defaultdict(set)
+    contract_labels: dict[str, str] = {}
+
+    personal_contracts: list[Contract] = await client.get_contracts(primary_bp_number)
+    for contract in personal_contracts:
+        if contract.status != 1:
+            continue
+        contract_id = int(contract.contract_id)
+        bp_number_to_contract[primary_bp_number].add(contract_id)
+        contract_labels[str(contract_id)] = _build_contract_label(
+            contract_id, contract.address
+        )
+
+    try:
+        user_profile = await client.get_masa_contact_account_user_profile()
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.debug("Failed to fetch user profile for shared accounts: %s", err)
+        user_profile = None
+
+    if user_profile and user_profile.connection_between_contact_and_contract:
+        for connection in user_profile.connection_between_contact_and_contract:
+            contract = connection.contract
+            if not contract or not contract.site:
+                continue
+
+            contract_id = contract.contract_acc_number_in_shoval
+            if not contract_id:
+                continue
+
+            normalized_contract_id = int(contract_id)
+            shared_bp_number: str | None = None
+            try:
+                customer_mobile = await client.get_customer_mobile(str(contract_id))
+                if customer_mobile and customer_mobile.customer:
+                    shared_bp_number = customer_mobile.customer.bp_number
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug(
+                    "Failed to resolve bp_number for shared contract %s: %s",
+                    normalized_contract_id,
+                    err,
+                )
+
+            if not shared_bp_number:
+                continue
+
+            bp_number_to_contract[shared_bp_number].add(normalized_contract_id)
+            contract_labels[str(normalized_contract_id)] = _build_contract_label(
+                normalized_contract_id,
+                contract.site.full_address,
+            )
+
+    return (
+        {
+            bp_number: sorted(contract_ids)
+            for bp_number, contract_ids in bp_number_to_contract.items()
+        },
+        contract_labels,
+    )
 
 
 class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -141,14 +225,18 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
                     try:
                         customer = await client.get_customer()
-                        data[CONF_BP_NUMBER] = customer.bp_number
-
-                        contracts = await client.get_contracts(customer.bp_number)
-                        contract_ids = [
-                            int(contract.contract_id)
-                            for contract in contracts
-                            if contract.status == 1
-                        ]
+                        bp_number_to_contract, contract_labels = (
+                            await _build_bp_number_to_contract(
+                                client, customer.bp_number
+                            )
+                        )
+                        contract_ids = sorted(
+                            {
+                                contract_id
+                                for contract_ids_by_bp in bp_number_to_contract.values()
+                                for contract_id in contract_ids_by_bp
+                            }
+                        )
                     except asyncio.CancelledError:
                         errors["base"] = "cannot_connect"
                     except IECError:
@@ -163,10 +251,26 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         if len(contract_ids) == 0:
                             errors["base"] = "no_active_contracts"
                         elif len(contract_ids) == 1:
-                            data[CONF_SELECTED_CONTRACTS] = [contract_ids[0]]
+                            selected_contracts = [contract_ids[0]]
+                            data[CONF_SELECTED_CONTRACTS] = selected_contracts
+                            data[CONF_BP_NUMBER_TO_CONTRACT] = (
+                                _filter_bp_number_to_contract(
+                                    bp_number_to_contract, selected_contracts
+                                )
+                            )
+                            data.pop(CONF_BP_NUMBER, None)
                             return self._async_create_iec_entry(data)
                         else:
                             data[CONF_AVAILABLE_CONTRACTS] = contract_ids
+                            data[CONTRACT_OPTIONS_KEY] = {
+                                str(contract_id): contract_labels.get(
+                                    str(contract_id),
+                                    _build_contract_label(contract_id, None),
+                                )
+                                for contract_id in contract_ids
+                            }
+                            data[CONF_BP_NUMBER_TO_CONTRACT] = bp_number_to_contract
+                            data.pop(CONF_BP_NUMBER, None)
                             self.data = data
                             return await self.async_step_select_contracts()
             except asyncio.CancelledError:
@@ -218,27 +322,43 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         assert self.data is not None
         assert self.data.get(CONF_USER_ID) is not None
         assert self.data.get(CONF_API_TOKEN) is not None
-        assert self.data.get(CONF_BP_NUMBER) is not None
+        assert self.data.get(CONF_BP_NUMBER_TO_CONTRACT) is not None
+        assert self.data.get(CONTRACT_OPTIONS_KEY) is not None
 
         errors: dict[str, str] = {}
         if (
             user_input is not None
             and user_input.get(CONF_SELECTED_CONTRACTS) is not None
         ):
-            if len(user_input.get(CONF_SELECTED_CONTRACTS)) == 0:
+            selected_contracts = [
+                int(contract_id)
+                for contract_id in user_input.get(CONF_SELECTED_CONTRACTS, [])
+            ]
+
+            if len(selected_contracts) == 0:
                 errors["base"] = "no_contracts"
             else:
-                data = {**self.data, **user_input}
+                data = {**self.data}
+                data[CONF_SELECTED_CONTRACTS] = selected_contracts
+                data[CONF_BP_NUMBER_TO_CONTRACT] = _filter_bp_number_to_contract(
+                    data[CONF_BP_NUMBER_TO_CONTRACT], selected_contracts
+                )
                 if data.get(CONF_AVAILABLE_CONTRACTS):
                     data.pop(CONF_AVAILABLE_CONTRACTS)
+                data.pop(CONTRACT_OPTIONS_KEY, None)
+                data.pop(CONF_BP_NUMBER, None)
 
                 self.data = data
                 return self._async_create_iec_entry(data)
 
         schema = {
             vol.Required(
-                CONF_SELECTED_CONTRACTS, default=self.data.get(CONF_AVAILABLE_CONTRACTS)
-            ): multi_select(self.data.get(CONF_AVAILABLE_CONTRACTS))
+                CONF_SELECTED_CONTRACTS,
+                default=[
+                    str(contract_id)
+                    for contract_id in self.data.get(CONF_AVAILABLE_CONTRACTS, [])
+                ],
+            ): multi_select(self.data.get(CONTRACT_OPTIONS_KEY))
         }
 
         return self.async_show_form(
