@@ -21,6 +21,7 @@ from iec_api.models.jwt import JWT
 from .const import (
     CONF_AVAILABLE_CONTRACTS,
     CONF_BP_NUMBER,
+    CONF_CONTRACT_DISPLAY_NAMES,
     CONF_SELECTED_CONTRACTS,
     CONF_TOTP_SECRET,
     CONF_USER_ID,
@@ -28,6 +29,53 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+
+async def _get_contracts_from_user_profile(
+    client: IecClient,
+) -> tuple[list[int], dict[int, str]] | None:
+    """Fetch contracts from MasaMainPortalContactAccountUserProfile.
+
+    Returns tuple of (contract_ids, display_names) or None if unavailable.
+    Only includes contracts where site data exists.
+    """
+    try:
+        user_profile = await client.get_masa_contact_account_user_profile()
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.debug("Failed to fetch user profile: %s", err)
+        return None
+
+    if not user_profile or not user_profile.connection_between_contact_and_contract:
+        _LOGGER.debug("No connection_between_contact_and_contract in user profile")
+        return None
+
+    contract_ids: list[int] = []
+    display_names: dict[int, str] = {}
+
+    for conn in user_profile.connection_between_contact_and_contract:
+        contract = conn.contract
+        # Only include contracts where site data exists
+        if not contract or not contract.site:
+            continue
+
+        contract_id = contract.contract_acc_number_in_shoval
+        if not contract_id:
+            continue
+
+        # Get address from site
+        address = contract.site.full_address or "Unknown Address"
+
+        contract_ids.append(contract_id)
+        display_names[contract_id] = f"Contract {contract_id} - {address}"
+
+    _LOGGER.debug(
+        "Found %d contracts from user profile: %s",
+        len(contract_ids),
+        list(display_names.values()),
+    )
+
+    return contract_ids, display_names if contract_ids else None
+
 
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
@@ -143,12 +191,25 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         customer = await client.get_customer()
                         data[CONF_BP_NUMBER] = customer.bp_number
 
-                        contracts = await client.get_contracts(customer.bp_number)
-                        contract_ids = [
-                            int(contract.contract_id)
-                            for contract in contracts
-                            if contract.status == 1
-                        ]
+                        # Try to get contracts from user profile (richer data)
+                        contract_result = await _get_contracts_from_user_profile(client)
+                        if contract_result:
+                            contract_ids, display_names = contract_result
+                        else:
+                            # Fallback to old API
+                            _LOGGER.debug(
+                                "Falling back to get_contracts() for contract list"
+                            )
+                            contracts = await client.get_contracts(customer.bp_number)
+                            contract_ids = [
+                                int(contract.contract_id)
+                                for contract in contracts
+                                if contract.status == 1
+                            ]
+                            display_names = None
+
+                        if display_names:
+                            data[CONF_CONTRACT_DISPLAY_NAMES] = display_names
                     except asyncio.CancelledError:
                         errors["base"] = "cannot_connect"
                     except IECError:
@@ -235,10 +296,22 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self.data = data
                 return self._async_create_iec_entry(data)
 
+        available_contracts = self.data.get(CONF_AVAILABLE_CONTRACTS, [])
+        display_names = self.data.get(CONF_CONTRACT_DISPLAY_NAMES)
+
+        # Use display names if available, otherwise use contract IDs as labels
+        if display_names:
+            options = {
+                contract_id: display_names.get(contract_id, f"Contract {contract_id}")
+                for contract_id in available_contracts
+            }
+        else:
+            options = {cid: str(cid) for cid in available_contracts}
+
         schema = {
             vol.Required(
-                CONF_SELECTED_CONTRACTS, default=self.data.get(CONF_AVAILABLE_CONTRACTS)
-            ): multi_select(self.data.get(CONF_AVAILABLE_CONTRACTS))
+                CONF_SELECTED_CONTRACTS, default=available_contracts
+            ): multi_select(options)
         }
 
         return self.async_show_form(
