@@ -83,6 +83,15 @@ def _build_contract_label(contract_id: int, address: str | None) -> str:
     return f"Contract {contract_id} - {normalized_address}"
 
 
+def _normalize_bp_number(bp_number: str | None) -> str | None:
+    if not bp_number:
+        return None
+    try:
+        return str(int(bp_number))
+    except ValueError:
+        return bp_number
+
+
 def _filter_bp_number_to_contract(
     bp_number_to_contract: dict[str, list[int]], selected_contracts: list[int]
 ) -> dict[str, list[int]]:
@@ -96,26 +105,42 @@ def _filter_bp_number_to_contract(
 
 
 async def _build_bp_number_to_contract(
-    client: IecClient, primary_bp_number: str
+    client: IecClient,
 ) -> tuple[dict[str, list[int]], dict[str, str]]:
     bp_number_to_contract: dict[str, set[int]] = defaultdict(set)
     contract_labels: dict[str, str] = {}
-
-    personal_contracts: list[Contract] = await client.get_contracts(primary_bp_number)
-    for contract in personal_contracts:
-        if contract.status != 1:
-            continue
-        contract_id = int(contract.contract_id)
-        bp_number_to_contract[primary_bp_number].add(contract_id)
-        contract_labels[str(contract_id)] = _build_contract_label(
-            contract_id, contract.address
-        )
 
     try:
         user_profile = await client.get_masa_contact_account_user_profile()
     except Exception as err:  # noqa: BLE001
         _LOGGER.debug("Failed to fetch user profile for shared accounts: %s", err)
-        user_profile = None
+        return {}, {}
+
+    if not user_profile:
+        return {}, {}
+
+    bp_numbers = {
+        normalized_bp
+        for account in user_profile.accounts or []
+        if (normalized_bp := _normalize_bp_number(account.account_number)) is not None
+    }
+
+    for bp_number in bp_numbers:
+        try:
+            contracts: list[Contract] = await client.get_contracts(bp_number)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("Failed to fetch contracts for bp %s: %s", bp_number, err)
+            continue
+
+        for contract in contracts:
+            if contract.status != 1:
+                continue
+            contract_id = int(contract.contract_id)
+            bp_number_to_contract[bp_number].add(contract_id)
+            if str(contract_id) not in contract_labels:
+                contract_labels[str(contract_id)] = _build_contract_label(
+                    contract_id, contract.address
+                )
 
     if user_profile and user_profile.connection_between_contact_and_contract:
         for connection in user_profile.connection_between_contact_and_contract:
@@ -132,7 +157,9 @@ async def _build_bp_number_to_contract(
             try:
                 customer_mobile = await client.get_customer_mobile(str(contract_id))
                 if customer_mobile and customer_mobile.customer:
-                    shared_bp_number = customer_mobile.customer.bp_number
+                    shared_bp_number = _normalize_bp_number(
+                        customer_mobile.customer.bp_number
+                    )
             except Exception as err:  # noqa: BLE001
                 _LOGGER.debug(
                     "Failed to resolve bp_number for shared contract %s: %s",
@@ -224,11 +251,8 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         data.pop(CONF_TOTP_SECRET)
 
                     try:
-                        customer = await client.get_customer()
                         bp_number_to_contract, contract_labels = (
-                            await _build_bp_number_to_contract(
-                                client, customer.bp_number
-                            )
+                            await _build_bp_number_to_contract(client)
                         )
                         contract_ids = sorted(
                             {
