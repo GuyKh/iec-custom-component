@@ -17,3 +17,6 @@ coverage.xml
 # Home Assistant configuration
 config/*
 !config/configuration.yaml
+
+# local git worktrees
+.worktrees/
