@@ -51,9 +51,13 @@ async def _validate_login(
     if not (login_data.get(CONF_TOTP_SECRET) or login_data.get(CONF_API_TOKEN)):
         return {"base": "invalid_auth"}
 
+    normalized_otp_secret = _normalize_otp_secret(login_data.get(CONF_TOTP_SECRET))
     if login_data.get(CONF_TOTP_SECRET):
+        if not normalized_otp_secret:
+            return {"base": "invalid_auth"}
         try:
-            await api.verify_otp(login_data.get(CONF_TOTP_SECRET))
+            login_data[CONF_TOTP_SECRET] = normalized_otp_secret
+            await api.verify_otp(normalized_otp_secret)
         except asyncio.CancelledError:
             return {"base": "cannot_connect"}
         except IECError:
@@ -90,6 +94,12 @@ def _normalize_bp_number(bp_number: str | None) -> str | None:
         return str(int(bp_number))
     except ValueError:
         return bp_number
+
+
+def _normalize_otp_secret(otp_secret: str | None) -> str:
+    if not otp_secret:
+        return ""
+    return "".join(char for char in otp_secret if char.isdigit())
 
 
 def _filter_bp_number_to_contract(
