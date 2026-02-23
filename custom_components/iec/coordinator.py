@@ -123,8 +123,10 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         self._kwh_tariff: float | None = None
         self._kva_tariff: float | None = None
         self._readings = {}
-        self._account_id: str | None = None
-        self._connection_size: str | None = None
+        self._default_account_id: UUID | None = None
+        self._account_id_by_contract: dict[int, UUID] = {}
+        self._contract_account_mapping_loaded = False
+        self._connection_size_by_account_id: dict[UUID, str] = {}
         self._api_session = aiohttp_client.async_get_clientsession(
             hass, family=socket.AF_INET
         )
@@ -502,24 +504,70 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 )
         return distribution_tariff or 0.0
 
-    async def _get_account_id(self) -> UUID | None:
-        if not self._account_id:
+    async def _load_contract_account_mapping(self) -> None:
+        if self._contract_account_mapping_loaded:
+            return
+        self._contract_account_mapping_loaded = True
+
+        try:
+            user_profile = await self.api.get_masa_contact_account_user_profile()
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("Failed fetching Masa user profile for account mapping: %s", err)
+            return
+
+        if not user_profile or not user_profile.connection_between_contact_and_contract:
+            return
+
+        for connection in user_profile.connection_between_contact_and_contract:
+            if not connection.contract or not connection.account:
+                continue
+
+            contract_id = connection.contract.contract_acc_number_in_shoval
+            account_id = connection.account.id
+            if not contract_id or not account_id:
+                continue
+
+            self._account_id_by_contract[int(contract_id)] = account_id
+
+    async def _get_account_id(self, contract_id: int) -> UUID | None:
+        mapped_account_id = self._account_id_by_contract.get(contract_id)
+        if mapped_account_id:
+            return mapped_account_id
+
+        await self._load_contract_account_mapping()
+        mapped_account_id = self._account_id_by_contract.get(contract_id)
+        if mapped_account_id:
+            return mapped_account_id
+
+        if not self._default_account_id:
             try:
                 account = await self.api.get_default_account()
-                self._account_id = account.id
+                self._default_account_id = account.id
             except IECError as e:
-                _LOGGER.exception("Failed fetching Account", e)
-        return self._account_id
+                _LOGGER.exception("Failed fetching default account", e)
+                return None
 
-    async def _get_connection_size(self, account_id) -> str | None:
-        if not self._connection_size:
-            try:
-                self._connection_size = (
-                    await self.api.get_masa_connection_size_from_masa(account_id)
-                )
-            except IECError as e:
-                _LOGGER.exception("Failed fetching Masa Connection Size", e)
-        return self._connection_size
+        return self._default_account_id
+
+    async def _get_connection_size(self, account_id: UUID | None) -> str | None:
+        if not account_id:
+            return None
+
+        connection_size = self._connection_size_by_account_id.get(account_id)
+        if connection_size:
+            return connection_size
+
+        try:
+            connection_size = await self.api.get_masa_connection_size_from_masa(account_id)
+            if connection_size:
+                self._connection_size_by_account_id[account_id] = connection_size
+        except IECError as e:
+            _LOGGER.exception(
+                "Failed fetching Masa Connection Size for account %s", account_id, e
+            )
+            return None
+
+        return connection_size
 
     async def _get_power_size(self, connection_size) -> float:
         power_size = self._power_size_by_connection_size.get(connection_size)
@@ -1359,7 +1407,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 last_meter_read = last_meter_reading.reading
                 last_meter_read_date = last_meter_reading.reading_date.date()
 
-            account_id = await self._get_account_id()
+            account_id = await self._get_account_id(contract_id)
             connection_size = await self._get_connection_size(account_id)
             if connection_size:
                 phase_count_str = (
