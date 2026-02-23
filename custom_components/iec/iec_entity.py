@@ -24,5 +24,7 @@ class IecEntity(CoordinatorEntity[IecApiCoordinator]):
         self.meter_id = meter_id
         self.iec_entity_type = iec_entity_type
         self._attr_device_info = get_device_info(
-            self.contract_id, self.meter_id, self.iec_entity_type
+            self.contract_id if iec_entity_type != IecEntityType.GENERIC else "Generic",
+            self.meter_id,
+            self.iec_entity_type,
         )

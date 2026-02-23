@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import asyncio
 from collections.abc import Mapping
 from typing import Any
 
@@ -18,12 +19,12 @@ from iec_api.models.exceptions import IECError
 from iec_api.models.jwt import JWT
 
 from .const import (
-    CONF_TOTP_SECRET,
-    DOMAIN,
-    CONF_USER_ID,
-    CONF_BP_NUMBER,
     CONF_AVAILABLE_CONTRACTS,
+    CONF_BP_NUMBER,
     CONF_SELECTED_CONTRACTS,
+    CONF_TOTP_SECRET,
+    CONF_USER_ID,
+    DOMAIN,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -39,28 +40,34 @@ async def _validate_login(
     hass: HomeAssistant, login_data: dict[str, Any], api: IecClient
 ) -> dict[str, str]:
     """Validate login data and return any errors."""
-    assert login_data is not None
-    assert api is not None
-    assert login_data.get(CONF_USER_ID) is not None
-    assert (
-        login_data.get(CONF_TOTP_SECRET) or login_data.get(CONF_API_TOKEN) is not None
-    )
+    if not login_data or not api:
+        return {"base": "cannot_connect"}
+    if not login_data.get(CONF_USER_ID):
+        return {"base": "invalid_auth"}
+    if not (login_data.get(CONF_TOTP_SECRET) or login_data.get(CONF_API_TOKEN)):
+        return {"base": "invalid_auth"}
 
     if login_data.get(CONF_TOTP_SECRET):
         try:
             await api.verify_otp(login_data.get(CONF_TOTP_SECRET))
+        except asyncio.CancelledError:
+            return {"base": "cannot_connect"}
         except IECError:
             return {"base": "invalid_auth"}
 
     elif login_data.get(CONF_API_TOKEN):
         try:
             await api.load_jwt_token(JWT.from_dict(login_data.get(CONF_API_TOKEN)))
+        except asyncio.CancelledError:
+            return {"base": "cannot_connect"}
         except IECError:
             return {"base": "invalid_auth"}
 
     errors: dict[str, str] = {}
     try:
         await api.check_token()
+    except asyncio.CancelledError:
+        errors["base"] = "cannot_connect"
     except IECError:
         errors["base"] = "invalid_auth"
 
@@ -112,39 +119,63 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle MFA step."""
-        assert self.data is not None
-        assert self.data.get(CONF_USER_ID) is not None
+        if not self.data or not self.data.get(CONF_USER_ID):
+            return self.async_show_form(
+                step_id="user",
+                data_schema=STEP_USER_DATA_SCHEMA,
+                errors={"base": "invalid_auth"},
+            )
 
         client: IecClient = self.client
 
         errors: dict[str, str] = {}
         if user_input is not None and user_input.get(CONF_TOTP_SECRET) is not None:
-            data = {**self.data, **user_input}
-            errors = await _validate_login(self.hass, data, client)
-            if not errors:
-                data[CONF_API_TOKEN] = client.get_token().to_dict()
+            try:
+                data = {**self.data, **user_input}
+                errors = await _validate_login(self.hass, data, client)
+                if not errors:
+                    data[CONF_API_TOKEN] = client.get_token().to_dict()
 
-                if data.get(CONF_TOTP_SECRET):
-                    data.pop(CONF_TOTP_SECRET)
+                    if data.get(CONF_TOTP_SECRET):
+                        data.pop(CONF_TOTP_SECRET)
 
-                customer = await client.get_customer()
-                data[CONF_BP_NUMBER] = customer.bp_number
+                    try:
+                        customer = await client.get_customer()
+                        data[CONF_BP_NUMBER] = customer.bp_number
 
-                contracts = await client.get_contracts(customer.bp_number)
-                contract_ids = [
-                    int(contract.contract_id)
-                    for contract in contracts
-                    if contract.status == 1
-                ]
-                if not contracts:
-                    errors["base"] = "no_contracts"
-                elif len(contract_ids) == 1:
-                    data[CONF_SELECTED_CONTRACTS] = [contract_ids[0]]
-                    return self._async_create_iec_entry(data)
-                else:
-                    data[CONF_AVAILABLE_CONTRACTS] = contract_ids
-                    self.data = data
-                    return await self.async_step_select_contracts()
+                        contracts = await client.get_contracts(customer.bp_number)
+                        contract_ids = [
+                            int(contract.contract_id)
+                            for contract in contracts
+                            if contract.status == 1
+                        ]
+                    except asyncio.CancelledError:
+                        errors["base"] = "cannot_connect"
+                    except IECError:
+                        errors["base"] = "cannot_connect"
+                    except Exception as err:  # noqa: BLE001
+                        _LOGGER.exception(
+                            "Unexpected error during contracts fetch: %s", err
+                        )
+                        errors["base"] = "cannot_connect"
+
+                    if not errors:
+                        if len(contract_ids) == 0:
+                            errors["base"] = "no_active_contracts"
+                        elif len(contract_ids) == 1:
+                            data[CONF_SELECTED_CONTRACTS] = [contract_ids[0]]
+                            return self._async_create_iec_entry(data)
+                        else:
+                            data[CONF_AVAILABLE_CONTRACTS] = contract_ids
+                            self.data = data
+                            return await self.async_step_select_contracts()
+            except asyncio.CancelledError:
+                errors["base"] = "cannot_connect"
+            except IECError:
+                errors["base"] = "cannot_connect"
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.exception("Unexpected error during MFA step: %s", err)
+                errors["base"] = "cannot_connect"
 
         if errors:
             schema = {vol.Required(CONF_USER_ID, default=self.data[CONF_USER_ID]): str}
@@ -152,11 +183,23 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             schema = {}
 
         schema[vol.Required(CONF_TOTP_SECRET)] = str
-        await client.login_with_id()
+        try:
+            otp_type = await client.login_with_id()
+        except asyncio.CancelledError:
+            errors["base"] = errors.get("base") or "cannot_connect"
+            otp_type = "OTP"
+        except IECError:
+            errors["base"] = errors.get("base") or "cannot_connect"
+            otp_type = "OTP"
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.exception("Unexpected error during login_with_id: %s", err)
+            errors["base"] = errors.get("base") or "cannot_connect"
+            otp_type = "OTP"
 
         return self.async_show_form(
             step_id="mfa",
             data_schema=vol.Schema(schema),
+            description_placeholders={"otp_type": otp_type},
             errors=errors,
         )
 
@@ -237,12 +280,25 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return self.async_abort(reason="reauth_successful")
 
         if not client:
+            assert self.reauth_entry is not None
             self.client = IecClient(
-                self.data[CONF_USER_ID], async_create_clientsession(self.hass)
+                self.reauth_entry.data[CONF_USER_ID],
+                async_create_clientsession(self.hass),
             )
             client = self.client
 
-        await client.login_with_id()
+        try:
+            otp_type = await client.login_with_id()
+        except asyncio.CancelledError:
+            errors["base"] = errors.get("base") or "cannot_connect"
+            otp_type = "OTP"
+        except IECError:
+            errors["base"] = errors.get("base") or "cannot_connect"
+            otp_type = "OTP"
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.exception("Unexpected error during reauth login_with_id: %s", err)
+            errors["base"] = errors.get("base") or "cannot_connect"
+            otp_type = "OTP"
 
         schema = {
             vol.Required(CONF_USER_ID): self.reauth_entry.data[CONF_USER_ID],
@@ -251,6 +307,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="reauth_confirm",
+            description_placeholders={"otp_type": otp_type},
             data_schema=vol.Schema(schema),
             errors=errors,
         )

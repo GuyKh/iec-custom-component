@@ -6,6 +6,12 @@
             }
         },
         "sensor": {
+            "access_token_expiry_time": {
+                "name": "Access Token Expiry Time"
+            },
+            "access_token_issued_at": {
+                "name": "Access Token Issued At"
+            },
             "elec_forecasted_usage": {
                 "name": "Next electric bill forecasted usage {multi_contract}"
             },
@@ -74,7 +80,7 @@
             },
             "mfa": {
                 "title": "OTP",
-                "description": "Enter your One Time Password (OTP)",
+                "description": "Enter your One Time Password (OTP) sent to your {otp_type}",
                 "data": {
                     "totp_secret": "e.g. 123456"
                 }
@@ -88,6 +94,7 @@
             },
             "reauth_confirm": {
                 "title": "[%key:common::config_flow::title::reauth%]",
+                "description": "Enter your One Time Password (OTP) send to your {otp_type}",
                 "data": {
                     "user_id": "User ID",
                     "totp_secret": "e.g. 123456"
@@ -100,6 +107,7 @@
             "invalid_id": "Invalid Israeli ID",
             "no_selected_contracts": "You should select at least one contract",
             "no_contracts": "No Contracts Found"
+            "no_active_contracts": "No active contracts found"
         },
         "abort": {
             "already_configured": "[%key:common::config_flow::abort::already_configured_service%]",

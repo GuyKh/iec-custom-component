@@ -4,7 +4,7 @@ from datetime import datetime
 
 from iec_api.models.invoice import Invoice
 from iec_api.models.meter_reading import MeterReading
-from iec_api.models.remote_reading import RemoteReading
+from iec_api.models.remote_reading import PeriodConsumption
 
 DOMAIN = "iec"
 
@@ -12,7 +12,7 @@ ILS = "₪"
 ILS_PER_KWH = "ILS/kWh"
 
 EMPTY_DATETIME = datetime.fromordinal(1)
-EMPTY_REMOTE_READING = RemoteReading(0, datetime(2024, 1, 1), 0)
+EMPTY_REMOTE_READING = PeriodConsumption(datetime(2024, 1, 1), 0, 0)
 EMPTY_INVOICE = Invoice(
     consumption=0,
     amount_origin=0,
@@ -43,10 +43,12 @@ EMPTY_INVOICE = Invoice(
 )
 CONF_USER_ID = "user_id"
 CONF_TOTP_SECRET = "totp_secret"
+CONF_TOTP_TYPE = "otp_type"
 CONF_BP_NUMBER = "bp_number"
 CONF_SELECTED_CONTRACTS = "selected_contracts"
 CONF_AVAILABLE_CONTRACTS = "contracts"
 CONF_MAIN_CONTRACT_ID = "main_contract_id"
+JWT_DICT_NAME = "jwt"
 STATICS_DICT_NAME = "statics"
 ATTRIBUTES_DICT_NAME = "entity_attributes"
 ESTIMATED_BILL_DICT_NAME = "estimated_bill"
@@ -68,3 +70,5 @@ STATIC_KWH_TARIFF = "kwh_tariff"
 STATIC_KVA_TARIFF = "kva_tariff"
 STATIC_BP_NUMBER = "bp_number"
 ELECTRIC_INVOICE_DOC_ID = "1"
+ACCESS_TOKEN_ISSUED_AT = "iat"
+ACCESS_TOKEN_EXPIRATION_TIME = "exp"

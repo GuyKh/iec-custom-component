@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+
+set -e
+
+cd "$(dirname "$0")/.."
+
+python3 -m mypy \
+    --cache-dir /tmp/mypy_cache_iec \
+    --namespace-packages \
+    --explicit-package-bases \
+    --disable-error-code=import-untyped \
+    custom_components/iec
