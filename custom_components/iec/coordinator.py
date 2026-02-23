@@ -67,6 +67,7 @@ from .const import (
     FUTURE_CONSUMPTIONS_DICT_NAME,
     ILS,
     INVOICE_DICT_NAME,
+    IS_SHARED_ATTR_NAME,
     IS_SMART_METER_ATTR_NAME,
     JWT_DICT_NAME,
     METER_ID_ATTR_NAME,
@@ -125,6 +126,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         self._readings = {}
         self._default_account_id: UUID | None = None
         self._account_id_by_contract: dict[int, UUID] = {}
+        self._shared_contract_ids: set[int] = set()
         self._contract_account_mapping_loaded = False
         self._connection_size_by_account_id: dict[UUID, str] = {}
         self._api_session = aiohttp_client.async_get_clientsession(
@@ -527,7 +529,10 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             if not contract_id or not account_id:
                 continue
 
-            self._account_id_by_contract[int(contract_id)] = account_id
+            normalized_contract_id = int(contract_id)
+            self._account_id_by_contract[normalized_contract_id] = account_id
+            if connection.part_connection_code and connection.part_connection_code != 1:
+                self._shared_contract_ids.add(normalized_contract_id)
 
     async def _get_account_id(self, contract_id: int) -> UUID | None:
         mapped_account_id = self._account_id_by_contract.get(contract_id)
@@ -736,6 +741,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         self,
     ) -> dict[str, dict[str, Any]]:
         contracts: dict[int, Contract] = await self._load_selected_contracts()
+        await self._load_contract_account_mapping()
         localized_today = localize_datetime(datetime.now())
         localized_first_of_month = localized_today.replace(day=1)
         kwh_tariff = await self._get_kwh_tariff()
@@ -830,6 +836,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             attributes_to_add = {
                 CONTRACT_ID_ATTR_NAME: str(contract_id),
                 IS_SMART_METER_ATTR_NAME: is_smart_meter,
+                IS_SHARED_ATTR_NAME: contract_id in self._shared_contract_ids,
                 METER_ID_ATTR_NAME: None,
             }
 

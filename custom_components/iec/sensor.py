@@ -42,6 +42,7 @@ from .const import (
     ILS,
     ILS_PER_KWH,
     INVOICE_DICT_NAME,
+    IS_SHARED_ATTR_NAME,
     JWT_DICT_NAME,
     METER_ID_ATTR_NAME,
     STATIC_KWH_TARIFF,
@@ -466,6 +467,7 @@ class IecSensor(IecEntity, SensorEntity):
             contract_id,
             attributes_to_add.get(METER_ID_ATTR_NAME) if attributes_to_add else None,
             _get_iec_type_by_class(description),
+            bool(attributes_to_add and attributes_to_add.get(IS_SHARED_ATTR_NAME)),
         )
         self.entity_description = description
         self._attr_unique_id = f"{str(contract_id)}_{description.key}"

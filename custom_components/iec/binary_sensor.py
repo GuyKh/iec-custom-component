@@ -20,6 +20,7 @@ from .const import (
     DOMAIN,
     STATICS_DICT_NAME,
     INVOICE_DICT_NAME,
+    IS_SHARED_ATTR_NAME,
     JWT_DICT_NAME,
     EMPTY_INVOICE,
     ATTRIBUTES_DICT_NAME,
@@ -118,6 +119,7 @@ class IecBinarySensorEntity(IecEntity, BinarySensorEntity):
             str(int(contract_id)),
             attributes_to_add.get(METER_ID_ATTR_NAME) if attributes_to_add else None,
             IecEntityType.CONTRACT,
+            bool(attributes_to_add and attributes_to_add.get(IS_SHARED_ATTR_NAME)),
         )
         self.entity_description = entity_description
         self._attr_unique_id = f"{str(contract_id)}_{entity_description.key}"
@@ -147,4 +149,9 @@ class IecBinarySensorEntity(IecEntity, BinarySensorEntity):
     @property
     def device_info(self) -> DeviceInfo:
         """Return the device info."""
-        return get_device_info(self.contract_id, None, IecEntityType.CONTRACT)
+        return get_device_info(
+            self.contract_id,
+            None,
+            IecEntityType.CONTRACT,
+            self.is_shared,
+        )
