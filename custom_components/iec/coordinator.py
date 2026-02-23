@@ -161,6 +161,10 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         for bp_number, contract_ids in raw_map.items():
             if not bp_number or not isinstance(contract_ids, list):
                 continue
+            try:
+                normalized_bp_number = str(int(str(bp_number)))
+            except ValueError:
+                normalized_bp_number = str(bp_number)
             normalized_contracts = sorted(
                 {
                     int(contract_id)
@@ -169,7 +173,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 }
             )
             if normalized_contracts:
-                normalized[str(bp_number)] = normalized_contracts
+                normalized[normalized_bp_number] = normalized_contracts
         return normalized
 
     def _persist_bp_number_to_contract_mapping(self) -> None:
@@ -195,14 +199,29 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             )
             self._entry_data = new_data
 
+    @staticmethod
+    def _normalize_bp_number(bp_number: str | None) -> str | None:
+        if not bp_number:
+            return None
+        try:
+            return str(int(bp_number))
+        except ValueError:
+            return bp_number
+
     def _set_contract_bp_mapping(self, contract_id: int, bp_number: str) -> None:
-        existing_contracts = set(self._bp_number_to_contract.get(bp_number, []))
+        normalized_bp_number = self._normalize_bp_number(bp_number)
+        if not normalized_bp_number:
+            return
+
+        existing_contracts = set(
+            self._bp_number_to_contract.get(normalized_bp_number, [])
+        )
         if contract_id in existing_contracts:
             return
 
         existing_contracts.add(contract_id)
-        self._bp_number_to_contract[bp_number] = sorted(existing_contracts)
-        self._contract_to_bp_number[contract_id] = bp_number
+        self._bp_number_to_contract[normalized_bp_number] = sorted(existing_contracts)
+        self._contract_to_bp_number[contract_id] = normalized_bp_number
 
     async def _resolve_bp_number_for_contract(self, contract_id: int) -> str | None:
         mapped_bp_number = self._contract_to_bp_number.get(contract_id)
@@ -212,7 +231,9 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         try:
             customer_mobile = await self.api.get_customer_mobile(str(contract_id))
             if customer_mobile and customer_mobile.customer:
-                mapped_bp_number = customer_mobile.customer.bp_number
+                mapped_bp_number = self._normalize_bp_number(
+                    customer_mobile.customer.bp_number
+                )
         except asyncio.CancelledError:
             return None
         except Exception as err:  # noqa: BLE001
@@ -224,7 +245,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             mapped_bp_number = None
 
         if not mapped_bp_number and self._bp_number:
-            mapped_bp_number = self._bp_number
+            mapped_bp_number = self._normalize_bp_number(self._bp_number)
 
         if mapped_bp_number:
             self._set_contract_bp_mapping(contract_id, mapped_bp_number)
