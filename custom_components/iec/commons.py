@@ -58,6 +58,7 @@ def get_device_info(
     contract_id: str,
     meter_id: str | None,
     iec_entity_type: IecEntityType = IecEntityType.GENERIC,
+    is_shared: bool = False,
 ) -> DeviceInfo:
     """Get device information based on contract ID and optional meter ID.
 
@@ -65,6 +66,7 @@ def get_device_info(
         contract_id (str): The contract ID.
         meter_id (str, optional): The meter ID, if available.
         iec_entity_type (IecEntityType): The Entity Type
+        is_shared (bool): Whether the contract belongs to a shared account.
 
     Returns:
         DeviceInfo: An object containing device information.
@@ -72,15 +74,16 @@ def get_device_info(
     """
 
     name = "IEC"
+    shared_suffix = " (Shared)" if is_shared else ""
     model = None
     serial_number = None
     match iec_entity_type:
         case IecEntityType.CONTRACT:
             contract_id = str(int(contract_id))
-            name = f"IEC Contract [{contract_id}]"
+            name = f"IEC Contract [{contract_id}]{shared_suffix}"
             model = "Contract: " + contract_id
         case IecEntityType.METER:
-            name = f"IEC Meter [{meter_id}]"
+            name = f"IEC Meter [{meter_id}]{shared_suffix}"
             model = "Contract: " + contract_id
             serial_number = ("Meter ID: " + meter_id) if meter_id else ""
 
