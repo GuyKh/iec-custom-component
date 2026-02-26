@@ -26,6 +26,8 @@ from .const import (
     ACCESS_TOKEN_EXPIRATION_TIME,
     ACCESS_TOKEN_ISSUED_AT,
     ATTRIBUTES_DICT_NAME,
+    BACKSTREAM_METERS_DICT_NAME,
+    BACKSTREAM_TOTALS_DICT_NAME,
     CONTRACT_DICT_NAME,
     DAILY_READINGS_DICT_NAME,
     DOMAIN,
@@ -122,6 +124,24 @@ def _get_reading_by_date(
             f"Couldn't find daily reading for date: {desired_date.strftime('%Y-%m-%d')}"
         )
         return EMPTY_REMOTE_READING
+
+
+def _is_backstream_meter(data: dict) -> bool:
+    meter_id = data[ATTRIBUTES_DICT_NAME][METER_ID_ATTR_NAME]
+    return bool(
+        data.get(BACKSTREAM_METERS_DICT_NAME)
+        and data[BACKSTREAM_METERS_DICT_NAME].get(meter_id)
+    )
+
+
+def _get_backstream_total(data: dict, key: str) -> float | None:
+    if not _is_backstream_meter(data):
+        return None
+
+    meter_id = data[ATTRIBUTES_DICT_NAME][METER_ID_ATTR_NAME]
+    backstream_totals = data.get(BACKSTREAM_TOTALS_DICT_NAME, {}).get(meter_id, {})
+    value = backstream_totals.get(key)
+    return float(value) if value is not None else None
 
 
 DIAGNOSTICS_SENSORS: tuple[IecEntityDescription, ...] = (
@@ -290,6 +310,44 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
     ),
 )
 
+BACKSTREAM_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
+    IecMeterEntityDescription(
+        key="elec_backstream_since_last_invoice",
+        device_class=SensorDeviceClass.ENERGY,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        state_class=SensorStateClass.TOTAL,
+        suggested_display_precision=3,
+        value_fn=lambda data: _get_backstream_total(
+            data,
+            "total_back_stream_for_period",
+        ),
+    ),
+    IecMeterEntityDescription(
+        key="elec_today_backstream",
+        device_class=SensorDeviceClass.ENERGY,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        suggested_display_precision=3,
+        value_fn=lambda data: (
+            _get_reading_by_date(
+                data[DAILY_READINGS_DICT_NAME][
+                    data[ATTRIBUTES_DICT_NAME][METER_ID_ATTR_NAME]
+                ],
+                localize_datetime(datetime.now()),
+            ).back_stream
+            if _is_backstream_meter(data)
+            else None
+        ),
+    ),
+    IecMeterEntityDescription(
+        key="elec_latest_backstream_meter_reading",
+        device_class=SensorDeviceClass.ENERGY,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        suggested_display_precision=3,
+        value_fn=lambda data: _get_backstream_total(data, "total_export"),
+    ),
+)
+
 ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
     IecContractEntityDescription(
         key="iec_last_elec_usage",
@@ -426,9 +484,17 @@ async def async_setup_entry(
                 )
         else:
             if coordinator.data[contract_key][CONTRACT_DICT_NAME].smart_meter:
+                contract_data = coordinator.data[contract_key]
+                meter_id = contract_data[ATTRIBUTES_DICT_NAME].get(METER_ID_ATTR_NAME)
+                has_backstream_meter = bool(
+                    meter_id
+                    and contract_data.get(BACKSTREAM_METERS_DICT_NAME, {}).get(meter_id)
+                )
                 sensors_desc: tuple[IecEntityDescription, ...] = (
                     ELEC_SENSORS + SMART_ELEC_SENSORS
                 )
+                if has_backstream_meter:
+                    sensors_desc += BACKSTREAM_ELEC_SENSORS
             else:
                 sensors_desc: tuple[IecEntityDescription, ...] = ELEC_SENSORS
             # sensors_desc: tuple[IecEntityDescription, ...] = ELEC_SENSORS
