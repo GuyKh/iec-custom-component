@@ -37,6 +37,15 @@
             "elec_latest_meter_reading": {
                 "name": "קריאת מונה אחרונה {multi_contract}"
             },
+            "elec_backstream_since_last_invoice": {
+                "name": "הזרמת חשמל מאז החשבונית האחרונה {multi_contract}"
+            },
+            "elec_today_backstream": {
+                "name": "הזרמת חשמל היום {multi_contract}"
+            },
+            "elec_latest_backstream_meter_reading": {
+                "name": "קריאת מונה הזרמה אחרונה {multi_contract}"
+            },
             "iec_last_elec_usage": {
                 "name": "סך צריכת החשמל בחשבונית האחרונה {multi_contract}"
             },

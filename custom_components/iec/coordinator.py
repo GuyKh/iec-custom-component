@@ -32,6 +32,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from iec_api.iec_client import IecClient
 from iec_api.models.contract import Contract
 from iec_api.models.device import Device, Devices
+from iec_api.models.device_in import DeviceInResponse
 from iec_api.models.exceptions import IECError
 from iec_api.models.jwt import JWT
 from iec_api.models.meter_reading import MeterReading
@@ -47,6 +48,8 @@ from .const import (
     ACCESS_TOKEN_EXPIRATION_TIME,
     ACCESS_TOKEN_ISSUED_AT,
     ATTRIBUTES_DICT_NAME,
+    BACKSTREAM_METERS_DICT_NAME,
+    BACKSTREAM_TOTALS_DICT_NAME,
     CONF_BP_NUMBER,
     CONF_BP_NUMBER_TO_CONTRACT,
     CONF_SELECTED_CONTRACTS,
@@ -157,6 +160,64 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         _LOGGER.info("Coordinator unloaded successfully.")
 
     @staticmethod
+    def _is_backstream_meter_kind(meter_kind: Any) -> bool:
+        """Return whether the IEC meter kind represents bidirectional export."""
+        if meter_kind is None:
+            return False
+
+        if isinstance(meter_kind, int):
+            return meter_kind == 2
+
+        normalized = str(
+            meter_kind.value if hasattr(meter_kind, "value") else meter_kind
+        ).strip()
+        if not normalized:
+            return False
+
+        if normalized.isdigit():
+            return int(normalized) == 2
+
+        lowered = normalized.lower()
+        return lowered in {"backstream", "דו כיווני"}
+
+    @staticmethod
+    def _map_meter_kind_to_remote_reading_param(meter_kind: Any) -> str:
+        """Translate IEC meter kind to the expected parameter for remote reading API."""
+        if meter_kind is None:
+            return ""
+
+        # Extract the value if it's an enum or other object
+        normalized = str(
+            meter_kind.value if hasattr(meter_kind, "value") else meter_kind
+        ).strip()
+
+        if not normalized:
+            return ""
+
+        # Map Hebrew terms to English
+        METER_KIND_MAPPING = {
+            "צריכה": "Consumption",
+            "דו כיווני": "BackStream",
+        }
+
+        return METER_KIND_MAPPING.get(normalized, normalized)
+
+
+    @staticmethod
+    def _extract_backstream_totals(meter: Any) -> tuple[float | None, float | None]:
+        """Extract backstream totals from meter/future payload fields."""
+        total_back_stream_for_period = getattr(
+            meter, "total_back_stream_for_period", None
+        )
+        total_export = getattr(meter, "total_export", None)
+
+        future_consumption_info = getattr(meter, "future_consumption_info", None)
+        if total_export is None and future_consumption_info is not None:
+            total_export = getattr(future_consumption_info, "total_export", None)
+
+        return total_back_stream_for_period, total_export
+
+    @staticmethod
     def _normalize_bp_number_to_contract(raw_map: Any) -> dict[str, list[int]]:
         if not isinstance(raw_map, dict):
             return {}
@@ -191,7 +252,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
         new_data = {**self._entry_data, CONF_BP_NUMBER_TO_CONTRACT: mapping}
         all_selected_contracts_mapped = all(
-            contract_id in self._contract_to_bp_number for contract_id in self._contract_ids
+            contract_id in self._contract_to_bp_number
+            for contract_id in self._contract_ids
         )
         if all_selected_contracts_mapped:
             new_data.pop(CONF_BP_NUMBER, None)
@@ -308,11 +370,14 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             if c.status == 1 and int(c.contract_id) in self._contract_ids
         }
 
-    async def _get_devices_by_contract_id(self, contract_id) -> list[Device]:
+    async def _get_devices_by_contract_id(self, contract_id) -> list[DeviceInResponse]:
         devices = self._devices_by_contract_id.get(contract_id)
         if not devices:
             try:
-                devices = await self.api.get_devices(str(contract_id))
+                # Trim leading zeros from contract_id
+                contract_id_normalized = str(int(contract_id))
+                device_in_response = await self.api.get_device_in(contract_id_normalized)
+                devices = device_in_response.devices if device_in_response else []
                 self._devices_by_contract_id[contract_id] = devices
             except IECError as e:
                 _LOGGER.exception(
@@ -514,7 +579,9 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         try:
             user_profile = await self.api.get_masa_contact_account_user_profile()
         except Exception as err:  # noqa: BLE001
-            _LOGGER.debug("Failed fetching Masa user profile for account mapping: %s", err)
+            _LOGGER.debug(
+                "Failed fetching Masa user profile for account mapping: %s", err
+            )
             return
 
         if not user_profile or not user_profile.connection_between_contact_and_contract:
@@ -563,7 +630,9 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             return connection_size
 
         try:
-            connection_size = await self.api.get_masa_connection_size_from_masa(account_id)
+            connection_size = await self.api.get_masa_connection_size_from_masa(
+                account_id
+            )
             if connection_size:
                 self._connection_size_by_account_id[account_id] = connection_size
         except IECError as e:
@@ -594,6 +663,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         device_code: str | int,
         reading_date: datetime,
         resolution: ReadingResolution,
+        meter_kind: str,
     ):
         date_key = reading_date.strftime("%Y")
         match resolution:
@@ -611,7 +681,9 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         reading = self._readings.get(key)
         if not reading:
             try:
+                mapped_meter_kind = self._map_meter_kind_to_remote_reading_param(meter_kind)
                 reading = await self.api.get_remote_reading(
+                    mapped_meter_kind,
                     device_id,
                     int(device_code),
                     reading_date,
@@ -651,10 +723,9 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         ):
             future_info.total_import = meter.total_import
 
-        if (
-            future_info.future_consumption
-            and future_info.future_consumption > 0
-        ) or (future_info.total_import and future_info.total_import > 0):
+        if (future_info.future_consumption and future_info.future_consumption > 0) or (
+            future_info.total_import and future_info.total_import > 0
+        ):
             return future_info
 
         return None
@@ -689,6 +760,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     device.device_code,
                     datetime.fromordinal(desired_date.toordinal()),
                     ReadingResolution.MONTHLY,
+                    device.meter_kind,
                 )
             else:
                 _LOGGER.debug(
@@ -830,6 +902,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
             future_consumption: dict[str, FutureConsumptionInfo | None] | None = {}
             daily_readings: dict[str, list[PeriodConsumption] | None] | None = {}
+            backstream_meters: dict[str, bool] = {}
+            backstream_totals: dict[str, dict[str, float | None]] = {}
 
             is_smart_meter = contract.smart_meter
             is_private_producer = contract.from_private_producer
@@ -889,15 +963,15 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                         device.device_code,
                         reading_date,
                         reading_type,
+                        device.meter_kind,
                     )
                     if (
                         remote_reading
                         and remote_reading.meter_list
                         and len(remote_reading.meter_list) > 0
                     ):
-                        daily_readings[device.device_number] = (
-                            remote_reading.meter_list[0].period_consumptions
-                        )
+                        meter = remote_reading.meter_list[0]
+                        daily_readings[device.device_number] = meter.period_consumptions
                         monthly_future_consumption = (
                             self._extract_valid_future_consumption(remote_reading)
                         )
@@ -905,6 +979,19 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                             future_consumption[device.device_number] = (
                                 monthly_future_consumption
                             )
+                        backstream_meters[device.device_number] = (
+                            self._is_backstream_meter_kind(
+                                getattr(meter, "meter_kind", None)
+                            )
+                        )
+                        (
+                            total_back_stream_for_period,
+                            total_export,
+                        ) = self._extract_backstream_totals(meter)
+                        backstream_totals[device.device_number] = {
+                            "total_back_stream_for_period": total_back_stream_for_period,
+                            "total_export": total_export,
+                        }
                     else:
                         _LOGGER.warning(
                             "No %s readings returned for device %s in contract %s on %s",
@@ -914,6 +1001,11 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                             reading_date,
                         )
                         daily_readings[device.device_number] = []
+                        backstream_meters[device.device_number] = False
+                        backstream_totals[device.device_number] = {
+                            "total_back_stream_for_period": None,
+                            "total_export": None,
+                        }
 
                     # Verify today's date appears
                     await self._verify_daily_readings_exist(
@@ -933,6 +1025,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                             device.device_code,
                             localized_today,
                             ReadingResolution.DAILY,
+                            device.meter_kind,
                         )
                         self._today_readings[today_reading_key] = today_reading
 
@@ -956,6 +1049,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                                 device.device_code,
                                 req_date,
                                 ReadingResolution.DAILY,
+                                device.meter_kind,
                             )
                             two_days_ago_future_consumption = (
                                 self._extract_valid_future_consumption(
@@ -1018,6 +1112,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 INVOICE_DICT_NAME: last_invoice,
                 FUTURE_CONSUMPTIONS_DICT_NAME: future_consumption,
                 DAILY_READINGS_DICT_NAME: daily_readings,
+                BACKSTREAM_METERS_DICT_NAME: backstream_meters,
+                BACKSTREAM_TOTALS_DICT_NAME: backstream_totals,
                 STATICS_DICT_NAME: {STATIC_KWH_TARIFF: kwh_tariff},  # workaround,
                 ATTRIBUTES_DICT_NAME: attributes_to_add,
                 ESTIMATED_BILL_DICT_NAME: estimated_bill_dict,
@@ -1097,6 +1193,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             id_prefix = f"iec_meter_{device.device_number}"
             consumption_statistic_id = f"{DOMAIN}:{id_prefix}_energy_consumption"
             cost_statistic_id = f"{DOMAIN}:{id_prefix}_energy_est_cost"
+            production_statistic_id = f"{DOMAIN}:{id_prefix}_energy_production"
 
             last_stat = await get_instance(self.hass).async_add_executor_job(
                 get_last_statistics, self.hass, 1, consumption_statistic_id, True, set()
@@ -1114,6 +1211,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     device.device_code,
                     localized_today,
                     ReadingResolution.MONTHLY,
+                    device.meter_kind,
                 )
 
                 if (
@@ -1147,6 +1245,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     device.device_code,
                     month_ago_time,
                     ReadingResolution.DAILY,
+                    device.meter_kind,
                 )
 
             else:
@@ -1187,6 +1286,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     device.device_code,
                     from_date,
                     ReadingResolution.DAILY,
+                    device.meter_kind,
                 )
                 if from_date.date() == localized_today.date():
                     self._today_readings[
@@ -1222,7 +1322,11 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 self.hass,
                 last_stat_req_hour,
                 None,
-                {cost_statistic_id, consumption_statistic_id},
+                {
+                    cost_statistic_id,
+                    consumption_statistic_id,
+                    production_statistic_id,
+                },
                 "hour",
                 None,
                 {"sum"},
@@ -1246,6 +1350,12 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             else:
                 cost_sum = cast(float, stats[cost_statistic_id][0]["sum"])
 
+            if not stats.get(production_statistic_id):
+                _LOGGER.debug("[IEC Statistics] No recent production data")
+                production_sum = 0.0
+            else:
+                production_sum = cast(float, stats[production_statistic_id][0]["sum"])
+
             _LOGGER.debug(
                 f"[IEC Statistics] Last Consumption Sum for C[{contract_id}] D[{device.device_number}]: {consumption_sum}"
             )
@@ -1268,6 +1378,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 ),
             )
             readings_by_hour: dict[datetime, float] = {}
+            backstream_by_hour: dict[datetime, float] = {}
             if last_stat_req_hour and last_stat_req_hour.tzinfo is None:
                 last_stat_req_hour = localize_datetime(last_stat_req_hour)
 
@@ -1288,6 +1399,9 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     continue
                 readings_by_hour[key] = sum(
                     reading.consumption for reading in group_list
+                )
+                backstream_by_hour[key] = sum(
+                    reading.back_stream or 0 for reading in group_list
                 )
 
             consumption_metadata = StatisticMetaData(
@@ -1310,11 +1424,24 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 mean_type=StatisticMeanType.NONE,
             )
 
+            production_metadata = StatisticMetaData(
+                has_mean=False,
+                has_sum=True,
+                name=f"IEC Meter {device.device_number} Production",
+                source=DOMAIN,
+                statistic_id=production_statistic_id,
+                unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+                mean_type=StatisticMeanType.NONE,
+            )
+
             consumption_statistics = []
             cost_statistics = []
+            production_statistics = []
             for key, value in sorted(readings_by_hour.items()):
                 consumption_sum += value
                 cost_sum += value * kwh_price
+                production_value = backstream_by_hour.get(key, 0.0)
+                production_sum += production_value
 
                 consumption_statistics.append(
                     StatisticData(start=key, sum=consumption_sum, state=value)
@@ -1322,6 +1449,13 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
                 cost_statistics.append(
                     StatisticData(start=key, sum=cost_sum, state=value * kwh_price)
+                )
+                production_statistics.append(
+                    StatisticData(
+                        start=key,
+                        sum=production_sum,
+                        state=production_value,
+                    )
                 )
 
             if readings_by_hour:
@@ -1335,12 +1469,18 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 _LOGGER.debug(
                     f"[IEC Statistics] New Estimated Cost Sum for C[{contract_id}] D[{device.device_number}]: {cost_sum}"
                 )
+                _LOGGER.debug(
+                    f"[IEC Statistics] New Production Sum for C[{contract_id}] D[{device.device_number}]: {production_sum}"
+                )
 
             async_add_external_statistics(
                 self.hass, consumption_metadata, consumption_statistics
             )
 
             async_add_external_statistics(self.hass, cost_metadata, cost_statistics)
+            async_add_external_statistics(
+                self.hass, production_metadata, production_statistics
+            )
 
     async def _estimate_bill(
         self,
