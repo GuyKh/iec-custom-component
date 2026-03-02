@@ -37,6 +37,15 @@
             "elec_latest_meter_reading": {
                 "name": "Latest meter reading {multi_contract}"
             },
+            "elec_backstream_since_last_invoice": {
+                "name": "Energy production since last invoice {multi_contract}"
+            },
+            "elec_today_backstream": {
+                "name": "Energy production today {multi_contract}"
+            },
+            "elec_latest_backstream_meter_reading": {
+                "name": "Latest production meter reading {multi_contract}"
+            },
             "iec_last_elec_usage": {
                 "name": "Last bill electric usage to date {multi_contract}"
             },
