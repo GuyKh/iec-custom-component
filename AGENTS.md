@@ -18,9 +18,9 @@ This is a Home Assistant custom component for the Israel Electric Corporation (I
 
 ## Tech Stack
 
-- **Python**: 3.12+
-- **Home Assistant**: 2025.1.4+
-- **iec-api**: 0.5.4 (Python client for IEC API)
+- **Python**: 3.13+
+- **Home Assistant**: 2025.10.2+
+- **iec-api**: 0.5.7 (Python client for IEC API)
 - **Linting**: ruff (with Home Assistant rules)
 - **Type Checking**: mypy
 

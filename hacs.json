@@ -2,7 +2,7 @@
     "name": "Israel Electric Corporation (IEC)",
     "filename": "iec.zip",
     "hide_default_branch": true,
-    "homeassistant": "2025.1.4",
+    "homeassistant": "2025.10.2",
     "render_readme": true,
     "zip_release": true
 }
