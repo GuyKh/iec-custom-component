@@ -1,3 +1,17 @@
 debug_get_coordinator_data:
   description: "Fetch and return the coordinator data for debugging purposes."
   fields: {}
+
+update_statistics_date:
+  description: "Manually update the statistics fetch start date when stuck on a partial hour."
+  fields:
+    datetime:
+      description: "The datetime to start fetching statistics from (ISO format, e.g. 2024-01-16T01:00:00)."
+      required: true
+      selector:
+        datetime:
+    device_number:
+      description: "The device number (meter ID) to update statistics for."
+      required: true
+      selector:
+        text:

@@ -5,7 +5,7 @@ import logging
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, ServiceCall
 
 from .const import DOMAIN
 from .coordinator import IecApiCoordinator
@@ -38,6 +38,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.services.async_register(
         DOMAIN, "debug_get_coordinator_data", handle_debug_get_coordinator_data
+    )
+
+    async def handle_update_statistics_date(call: ServiceCall) -> None:
+        datetime_str = call.data.get("datetime")
+        device_number = call.data.get("device_number")
+        if not datetime_str or not device_number:
+            _LOGGER.error("update_statistics_date: missing required fields (datetime, device_number)")
+            return
+        result = await iec_coordinator.set_statistics_from_date(str(datetime_str), str(device_number))
+        _LOGGER.info("update_statistics_date result: %s", result)
+        hass.bus.async_fire("iec_statistics_date_updated", {"result": result})
+
+    hass.services.async_register(
+        DOMAIN, "update_statistics_date", handle_update_statistics_date
     )
 
     return True

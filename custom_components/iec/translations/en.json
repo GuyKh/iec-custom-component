@@ -67,6 +67,20 @@
         "debug_get_coordinator_data": {
             "name": "Get IEC Coordinator Data",
             "description": "Fetch and return the coordinator data for debugging purposes."
+        },
+        "update_statistics_date": {
+            "name": "Update Statistics Date",
+            "description": "Manually update the statistics fetch start date when stuck on a partial hour.",
+            "fields": {
+                "datetime": {
+                    "name": "Start Date/Time",
+                    "description": "The datetime to start fetching statistics from (ISO format)."
+                },
+                "device_number": {
+                    "name": "Device Number",
+                    "description": "The device number (meter ID) to update statistics for."
+                }
+            }
         }
     },
     "config": {
