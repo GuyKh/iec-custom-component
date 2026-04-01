@@ -1046,7 +1046,24 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             _LOGGER.debug("Checking if API token needs to be refreshed")
             # First thing first, check the token and refresh if needed.
             old_token = self.api.get_token()
-            await self.api.check_token()
+
+            # Add retry logic for token refresh to handle transient DNS/resolution issues
+            max_retries = 3
+            base_delay = 5  # Start with 5 seconds delay
+
+            for attempt in range(max_retries):
+                try:
+                    await self.api.check_token()
+                    break  # Success, exit retry loop
+                except IECError as check_err:
+                    if attempt == max_retries - 1:  # Last attempt
+                        _LOGGER.error(f"Token check failed after {max_retries} attempts: {check_err}")
+                        raise  # Re-raise to be caught by outer exception handler
+                    else:
+                        delay = base_delay * (2 ** attempt)  # Exponential backoff: 5, 10, 20 seconds
+                        _LOGGER.warning(f"Token check attempt {attempt + 1} failed: {check_err}. Retrying in {delay} seconds...")
+                        await asyncio.sleep(delay)
+
             new_token = self.api.get_token()
             if old_token != new_token:
                 _LOGGER.debug("Token refreshed")
