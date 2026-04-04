@@ -129,6 +129,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         self._shared_contract_ids: set[int] = set()
         self._contract_account_mapping_loaded = False
         self._connection_size_by_account_id: dict[UUID, str] = {}
+        self._statistics_lock = asyncio.Lock()
         self._api_session = aiohttp_client.async_get_clientsession(
             hass, family=socket.AF_INET
         )
@@ -318,6 +319,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 _LOGGER.exception(
                     f"Failed fetching devices by contract {contract_id}", e
                 )
+                return []
         return devices
 
     async def _get_devices_by_device_id(self, meter_id) -> Devices:
@@ -1080,220 +1082,375 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             # Support only smart meters at the moment
             return
 
-        _LOGGER.debug(
-            f"[IEC Statistics] Updating statistics for IEC Contract {contract_id}"
-        )
-        devices = await self._get_devices_by_contract_id(contract_id)
-        kwh_price = await self._get_kwh_tariff()
-        localized_today = localize_datetime(datetime.now())
-
-        if not devices:
-            _LOGGER.error(
-                f"[IEC Statistics] Failed fetching devices for IEC Contract {contract_id}"
+        async with self._statistics_lock:
+            _LOGGER.debug(
+                f"[IEC Statistics] Updating statistics for IEC Contract {contract_id}"
             )
-            return
+            devices = await self._get_devices_by_contract_id(contract_id)
+            kwh_price = await self._get_kwh_tariff()
+            localized_today = localize_datetime(datetime.now())
 
-        for device in devices:
-            id_prefix = f"iec_meter_{device.device_number}"
-            consumption_statistic_id = f"{DOMAIN}:{id_prefix}_energy_consumption"
-            cost_statistic_id = f"{DOMAIN}:{id_prefix}_energy_est_cost"
+            if not devices:
+                _LOGGER.error(
+                    f"[IEC Statistics] Failed fetching devices for IEC Contract {contract_id}"
+                )
+                return
 
+            for device in devices:
+                device_number = str(int(device.device_number))
+                id_prefix = f"iec_meter_{device_number}"
+                consumption_statistic_id = f"{DOMAIN}:{id_prefix}_energy_consumption"
+                cost_statistic_id = f"{DOMAIN}:{id_prefix}_energy_est_cost"
+
+                last_stat = await get_instance(self.hass).async_add_executor_job(
+                    get_last_statistics, self.hass, 1, consumption_statistic_id, True, set()
+                )
+
+                if not last_stat:
+                    _LOGGER.debug(
+                        "[IEC Statistics] No statistics found, fetching today's MONTHLY readings to extract field `meterStartDate`"
+                    )
+
+                    month_ago_time = localized_today - timedelta(weeks=4)
+                    readings = await self._get_readings(
+                        contract_id,
+                        device.device_number,
+                        device.device_code,
+                        localized_today,
+                        ReadingResolution.MONTHLY,
+                    )
+
+                    if (
+                        readings
+                        and readings.meter_list
+                        and readings.meter_list[0].meter_start_date
+                    ):
+                        # Fetching the last reading from either the installation date or a month ago
+                        month_ago_time = max(
+                            month_ago_time,
+                            localize_datetime(
+                                datetime.combine(
+                                    readings.meter_list[0].meter_start_date,
+                                    datetime.min.time(),
+                                )
+                            ),
+                        )
+                    else:
+                        _LOGGER.debug(
+                            "[IEC Statistics] Failed to extract field `meterStartDate`, falling back to a month ago"
+                        )
+
+                    _LOGGER.debug("[IEC Statistics] Updating statistic for the first time")
+                    _LOGGER.debug(
+                        f"[IEC Statistics] Fetching consumption from {month_ago_time.strftime('%Y-%m-%d %H:%M:%S')}"
+                    )
+                    last_stat_time = 0
+                    readings = await self._get_readings(
+                        contract_id,
+                        device.device_number,
+                        device.device_code,
+                        month_ago_time,
+                        ReadingResolution.DAILY,
+                    )
+
+                else:
+                    last_stat_time = last_stat[consumption_statistic_id][0]["start"]
+                    # API returns daily data, so need to increase the start date by 4 hrs to get the next day
+                    from_date = localize_datetime(datetime.fromtimestamp(last_stat_time))
+                    _LOGGER.debug(
+                        f"[IEC Statistics] Last statistics are from {from_date.strftime('%Y-%m-%d %H:%M:%S')}"
+                    )
+
+                    if from_date.hour == 23:
+                        from_date = from_date + timedelta(hours=2)
+
+                    if localized_today.date() == from_date.date():
+                        _LOGGER.debug(
+                            "[IEC Statistics] The date to fetch is today or later, replacing it with Today at 01:00:00"
+                        )
+                        from_date = localized_today.replace(
+                            hour=1, minute=0, second=0, microsecond=0
+                        )
+
+                    min_from_date = (localized_today - timedelta(days=30)).replace(
+                        hour=1, minute=0, second=0, microsecond=0
+                    )
+                    if from_date < min_from_date:
+                        _LOGGER.debug(
+                            "[IEC Statistics] Last statistics are too old, limiting fetch window to %s",
+                            min_from_date.strftime("%Y-%m-%d %H:%M:%S"),
+                        )
+                        from_date = min_from_date
+
+                    _LOGGER.debug(
+                        f"[IEC Statistics] Fetching consumption from {from_date.strftime('%Y-%m-%d %H:%M:%S')}"
+                    )
+                    readings = await self._get_readings(
+                        contract_id,
+                        device.device_number,
+                        device.device_code,
+                        from_date,
+                        ReadingResolution.DAILY,
+                    )
+                    if from_date.date() == localized_today.date():
+                        self._today_readings[
+                            str(contract_id) + "-" + device.device_number
+                        ] = readings
+
+                if (
+                    not readings
+                    or not readings.meter_list
+                    or not len(readings.meter_list) > 0
+                    or not readings.meter_list[0].period_consumptions
+                    or not len(readings.meter_list[0].period_consumptions) > 0
+                ):
+                    _LOGGER.debug("[IEC Statistics] No recent usage data. Skipping update")
+                    continue
+
+                last_stat_hour = (
+                    localize_datetime(datetime.fromtimestamp(last_stat_time))
+                    if last_stat_time
+                    else readings.meter_list[0].period_consumptions[0].interval
+                )
+                last_stat_req_hour = (
+                    last_stat_hour
+                    if last_stat_hour.hour > 0
+                    else (last_stat_hour - timedelta(hours=1))
+                )
+
+                _LOGGER.debug(
+                    f"[IEC Statistics] Fetching LongTerm Statistics since {last_stat_req_hour}"
+                )
+                stats = await get_instance(self.hass).async_add_executor_job(
+                    statistics_during_period,
+                    self.hass,
+                    last_stat_req_hour,
+                    None,
+                    {cost_statistic_id, consumption_statistic_id},
+                    "hour",
+                    None,
+                    {"sum"},
+                )
+
+                if not stats.get(consumption_statistic_id):
+                    _LOGGER.debug("[IEC Statistics] No recent usage data")
+                    consumption_sum = 0
+                else:
+                    consumption_sum = cast(float, stats[consumption_statistic_id][0]["sum"])
+
+                if not stats.get(cost_statistic_id):
+                    if not stats.get(consumption_statistic_id):
+                        _LOGGER.debug("[IEC Statistics] No recent cost data")
+                        cost_sum = 0.0
+                    else:
+                        cost_sum = (
+                            cast(float, stats[consumption_statistic_id][0]["sum"])
+                            * kwh_price
+                        )
+                else:
+                    cost_sum = cast(float, stats[cost_statistic_id][0]["sum"])
+
+                _LOGGER.debug(
+                    f"[IEC Statistics] Last Consumption Sum for C[{contract_id}] D[{device.device_number}]: {consumption_sum}"
+                )
+                _LOGGER.debug(
+                    f"[IEC Statistics] Last Estimated Cost Sum for C[{contract_id}] D[{device.device_number}]: {cost_sum}"
+                )
+
+                new_readings: list[PeriodConsumption] = [
+                    reading
+                    for reading in readings.meter_list[0].period_consumptions
+                    if reading.interval
+                    >= localize_datetime(datetime.fromtimestamp(last_stat_time))
+                ]
+
+                grouped_new_readings_by_hour = itertools.groupby(
+                    new_readings,
+                    key=lambda reading: reading.interval.replace(
+                        minute=0, second=0, microsecond=0
+                    ),
+                )
+                readings_by_hour: dict[datetime, float] = {}
+                if last_stat_req_hour and last_stat_req_hour.tzinfo is None:
+                    last_stat_req_hour = localize_datetime(last_stat_req_hour)
+
+                for key, group in grouped_new_readings_by_hour:
+                    group_list = list(group)
+                    # Apply 4 listings per hour check only for days less than 1 month old
+                    one_month_ago = localized_today - timedelta(days=30)
+                    if key.date() >= one_month_ago.date() and len(group_list) < 4:
+                        _LOGGER.debug(
+                            f"[IEC Statistics] LongTerm Statistics - Skipping {key} since it's partial for the hour "
+                            f"(data is less than 1 month old and has only {len(group_list)} readings)"
+                        )
+                        continue
+                    if key <= last_stat_req_hour:
+                        _LOGGER.debug(
+                            f"[IEC Statistics] LongTerm Statistics - Skipping {key} data since it's already reported"
+                        )
+                        continue
+                    readings_by_hour[key] = sum(
+                        reading.consumption for reading in group_list
+                    )
+
+                consumption_metadata = StatisticMetaData(
+                    has_mean=False,
+                    has_sum=True,
+                    name=f"IEC Meter {device.device_number} Consumption",
+                    source=DOMAIN,
+                    statistic_id=consumption_statistic_id,
+                    unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+                    mean_type=StatisticMeanType.NONE,
+                )
+
+                cost_metadata = StatisticMetaData(
+                    has_mean=False,
+                    has_sum=True,
+                    name=f"IEC Meter {device.device_number} Estimated Cost",
+                    source=DOMAIN,
+                    statistic_id=cost_statistic_id,
+                    unit_of_measurement=ILS,
+                    mean_type=StatisticMeanType.NONE,
+                )
+
+                consumption_statistics = []
+                cost_statistics = []
+                for key, value in sorted(readings_by_hour.items()):
+                    consumption_sum += value
+                    cost_sum += value * kwh_price
+
+                    consumption_statistics.append(
+                        StatisticData(start=key, sum=consumption_sum, state=value)
+                    )
+
+                    cost_statistics.append(
+                        StatisticData(start=key, sum=cost_sum, state=value * kwh_price)
+                    )
+
+                if readings_by_hour:
+                    _LOGGER.debug(
+                        f"[IEC Statistics] Last hour fetched for C[{contract_id}] D[{device.device_number}]: "
+                        f"{max(readings_by_hour, key=lambda k: k)}"
+                    )
+                    _LOGGER.debug(
+                        f"[IEC Statistics] New Consumption Sum for C[{contract_id}] D[{device.device_number}]: {consumption_sum}"
+                    )
+                    _LOGGER.debug(
+                        f"[IEC Statistics] New Estimated Cost Sum for C[{contract_id}] D[{device.device_number}]: {cost_sum}"
+                    )
+
+                async_add_external_statistics(
+                    self.hass, consumption_metadata, consumption_statistics
+                )
+
+                async_add_external_statistics(self.hass, cost_metadata, cost_statistics)
+
+    async def set_statistics_from_date(
+        self, datetime_str: str, device_number: str
+    ) -> dict[str, Any]:
+        """Insert a zero-value statistic record to advance the statistics fetch point."""
+        # Normalize device number (strip leading zeros)
+        try:
+            device_number = str(int(device_number))
+        except (ValueError, TypeError):
+            return {"success": False, "error": "Invalid device number format"}
+
+        # Parse datetime
+        try:
+            target_dt = localize_datetime(datetime.fromisoformat(datetime_str))
+        except (ValueError, TypeError):
+            return {"success": False, "error": "Invalid datetime format, use ISO format (e.g. 2024-01-16T01:00:00)"}
+
+        now = localize_datetime(datetime.now())
+
+        # Validate: not in the future
+        if target_dt > now:
+            return {"success": False, "error": "Date must not be in the future"}
+
+        # Validate: not older than 30 days
+        min_date = (now - timedelta(days=30)).replace(hour=1, minute=0, second=0, microsecond=0)
+        if target_dt < min_date:
+            return {
+                "success": False,
+                "error": f"Date must not be older than {min_date.strftime('%Y-%m-%d %H:%M:%S')}",
+            }
+
+        # Validate: hour-aligned (minute and second must be 0)
+        if target_dt.minute != 0 or target_dt.second != 0:
+            return {"success": False, "error": "Date must be hour-aligned (minute and second must be 0)"}
+
+        # Validate: device_number belongs to a contract
+        device_found = False
+        for contract_id in self._contract_ids:
+            devices = await self._get_devices_by_contract_id(contract_id)
+            if not devices:
+                continue
+            for device in devices:
+                if str(int(device.device_number)) == device_number:
+                    device_found = True
+                    break
+            if device_found:
+                break
+
+        if not device_found:
+            return {"success": False, "error": f"Device number {device_number} not found in any contract"}
+
+        consumption_statistic_id = f"{DOMAIN}:iec_meter_{device_number}_energy_consumption"
+        cost_statistic_id = f"{DOMAIN}:iec_meter_{device_number}_energy_est_cost"
+
+        # Acquire lock to prevent race conditions with _insert_statistics
+        async with self._statistics_lock:
+            # Re-check: get last statistics
             last_stat = await get_instance(self.hass).async_add_executor_job(
                 get_last_statistics, self.hass, 1, consumption_statistic_id, True, set()
             )
 
-            if not last_stat:
-                _LOGGER.debug(
-                    "[IEC Statistics] No statistics found, fetching today's MONTHLY readings to extract field `meterStartDate`"
+            if last_stat and consumption_statistic_id in last_stat:
+                last_stats_dt = localize_datetime(
+                    datetime.fromtimestamp(last_stat[consumption_statistic_id][0]["start"])
                 )
+                if target_dt <= last_stats_dt:
+                    return {
+                        "success": False,
+                        "error": f"New date must be after current last statistics ({last_stats_dt.strftime('%Y-%m-%d %H:%M:%S')})",
+                    }
 
-                month_ago_time = localized_today - timedelta(weeks=4)
-                readings = await self._get_readings(
-                    contract_id,
-                    device.device_number,
-                    device.device_code,
-                    localized_today,
-                    ReadingResolution.MONTHLY,
-                )
-
-                if (
-                    readings
-                    and readings.meter_list
-                    and readings.meter_list[0].meter_start_date
-                ):
-                    # Fetching the last reading from either the installation date or a month ago
-                    month_ago_time = max(
-                        month_ago_time,
-                        localize_datetime(
-                            datetime.combine(
-                                readings.meter_list[0].meter_start_date,
-                                datetime.min.time(),
-                            )
-                        ),
-                    )
-                else:
-                    _LOGGER.debug(
-                        "[IEC Statistics] Failed to extract field `meterStartDate`, falling back to a month ago"
-                    )
-
-                _LOGGER.debug("[IEC Statistics] Updating statistic for the first time")
-                _LOGGER.debug(
-                    f"[IEC Statistics] Fetching consumption from {month_ago_time.strftime('%Y-%m-%d %H:%M:%S')}"
-                )
-                last_stat_time = 0
-                readings = await self._get_readings(
-                    contract_id,
-                    device.device_number,
-                    device.device_code,
-                    month_ago_time,
-                    ReadingResolution.DAILY,
-                )
-
-            else:
-                last_stat_time = last_stat[consumption_statistic_id][0]["start"]
-                # API returns daily data, so need to increase the start date by 4 hrs to get the next day
-                from_date = localize_datetime(datetime.fromtimestamp(last_stat_time))
-                _LOGGER.debug(
-                    f"[IEC Statistics] Last statistics are from {from_date.strftime('%Y-%m-%d %H:%M:%S')}"
-                )
-
-                if from_date.hour == 23:
-                    from_date = from_date + timedelta(hours=2)
-
-                if localized_today.date() == from_date.date():
-                    _LOGGER.debug(
-                        "[IEC Statistics] The date to fetch is today or later, replacing it with Today at 01:00:00"
-                    )
-                    from_date = localized_today.replace(
-                        hour=1, minute=0, second=0, microsecond=0
-                    )
-
-                min_from_date = (localized_today - timedelta(days=30)).replace(
-                    hour=1, minute=0, second=0, microsecond=0
-                )
-                if from_date < min_from_date:
-                    _LOGGER.debug(
-                        "[IEC Statistics] Last statistics are too old, limiting fetch window to %s",
-                        min_from_date.strftime("%Y-%m-%d %H:%M:%S"),
-                    )
-                    from_date = min_from_date
-
-                _LOGGER.debug(
-                    f"[IEC Statistics] Fetching consumption from {from_date.strftime('%Y-%m-%d %H:%M:%S')}"
-                )
-                readings = await self._get_readings(
-                    contract_id,
-                    device.device_number,
-                    device.device_code,
-                    from_date,
-                    ReadingResolution.DAILY,
-                )
-                if from_date.date() == localized_today.date():
-                    self._today_readings[
-                        str(contract_id) + "-" + device.device_number
-                    ] = readings
-
-            if (
-                not readings
-                or not readings.meter_list
-                or not len(readings.meter_list) > 0
-                or not readings.meter_list[0].period_consumptions
-                or not len(readings.meter_list[0].period_consumptions) > 0
-            ):
-                _LOGGER.debug("[IEC Statistics] No recent usage data. Skipping update")
-                continue
-
-            last_stat_hour = (
-                localize_datetime(datetime.fromtimestamp(last_stat_time))
-                if last_stat_time
-                else readings.meter_list[0].period_consumptions[0].interval
-            )
-            last_stat_req_hour = (
-                last_stat_hour
-                if last_stat_hour.hour > 0
-                else (last_stat_hour - timedelta(hours=1))
-            )
-
-            _LOGGER.debug(
-                f"[IEC Statistics] Fetching LongTerm Statistics since {last_stat_req_hour}"
-            )
-            stats = await get_instance(self.hass).async_add_executor_job(
+            # Check if valid stats already exist for the target hour
+            hour_end = target_dt + timedelta(hours=1)
+            existing_stats = await get_instance(self.hass).async_add_executor_job(
                 statistics_during_period,
                 self.hass,
-                last_stat_req_hour,
-                None,
-                {cost_statistic_id, consumption_statistic_id},
+                target_dt,
+                hour_end,
+                {consumption_statistic_id, cost_statistic_id},
                 "hour",
                 None,
                 {"sum"},
             )
 
-            if not stats.get(consumption_statistic_id):
-                _LOGGER.debug("[IEC Statistics] No recent usage data")
-                consumption_sum = 0
-            else:
-                consumption_sum = cast(float, stats[consumption_statistic_id][0]["sum"])
+            if existing_stats.get(consumption_statistic_id):
+                return {
+                    "success": False,
+                    "error": f"Valid statistics already exist at {target_dt.strftime('%Y-%m-%d %H:%M:%S')}",
+                }
 
-            if not stats.get(cost_statistic_id):
-                if not stats.get(consumption_statistic_id):
-                    _LOGGER.debug("[IEC Statistics] No recent cost data")
-                    cost_sum = 0.0
-                else:
-                    cost_sum = (
-                        cast(float, stats[consumption_statistic_id][0]["sum"])
-                        * kwh_price
-                    )
-            else:
-                cost_sum = cast(float, stats[cost_statistic_id][0]["sum"])
-
-            _LOGGER.debug(
-                f"[IEC Statistics] Last Consumption Sum for C[{contract_id}] D[{device.device_number}]: {consumption_sum}"
-            )
-            _LOGGER.debug(
-                f"[IEC Statistics] Last Estimated Cost Sum for C[{contract_id}] D[{device.device_number}]: {cost_sum}"
-            )
-
-            new_readings: list[PeriodConsumption] = filter(
-                lambda reading: (
-                    reading.interval
-                    >= localize_datetime(datetime.fromtimestamp(last_stat_time))
-                ),
-                readings.meter_list[0].period_consumptions,
-            )
-
-            grouped_new_readings_by_hour = itertools.groupby(
-                new_readings,
-                key=lambda reading: reading.interval.replace(
-                    minute=0, second=0, microsecond=0
-                ),
-            )
-            readings_by_hour: dict[datetime, float] = {}
-            if last_stat_req_hour and last_stat_req_hour.tzinfo is None:
-                last_stat_req_hour = localize_datetime(last_stat_req_hour)
-
-            for key, group in grouped_new_readings_by_hour:
-                group_list = list(group)
-                # Apply 4 listings per hour check only for days less than 1 month old
-                one_month_ago = localized_today - timedelta(days=30)
-                if key.date() >= one_month_ago.date() and len(group_list) < 4:
-                    _LOGGER.debug(
-                        f"[IEC Statistics] LongTerm Statistics - Skipping {key} since it's partial for the hour "
-                        f"(data is less than 1 month old and has only {len(group_list)} readings)"
-                    )
-                    continue
-                if key <= last_stat_req_hour:
-                    _LOGGER.debug(
-                        f"[IEC Statistics] LongTerm Statistics - Skipping {key} data since it's already reported"
-                    )
-                    continue
-                readings_by_hour[key] = sum(
-                    reading.consumption for reading in group_list
+            # Get existing sum values to carry forward
+            existing_consumption_sum = 0.0
+            existing_cost_sum = 0.0
+            if last_stat and consumption_statistic_id in last_stat:
+                existing_consumption_sum = cast(
+                    float, last_stat[consumption_statistic_id][0].get("sum", 0)
+                )
+            if last_stat and cost_statistic_id in last_stat:
+                existing_cost_sum = cast(
+                    float, last_stat[cost_statistic_id][0].get("sum", 0)
                 )
 
+            # Insert zero-value statistics
             consumption_metadata = StatisticMetaData(
                 has_mean=False,
                 has_sum=True,
-                name=f"IEC Meter {device.device_number} Consumption",
+                name=f"IEC Meter {device_number} Consumption",
                 source=DOMAIN,
                 statistic_id=consumption_statistic_id,
                 unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
@@ -1303,44 +1460,35 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             cost_metadata = StatisticMetaData(
                 has_mean=False,
                 has_sum=True,
-                name=f"IEC Meter {device.device_number} Estimated Cost",
+                name=f"IEC Meter {device_number} Estimated Cost",
                 source=DOMAIN,
                 statistic_id=cost_statistic_id,
                 unit_of_measurement=ILS,
                 mean_type=StatisticMeanType.NONE,
             )
 
-            consumption_statistics = []
-            cost_statistics = []
-            for key, value in sorted(readings_by_hour.items()):
-                consumption_sum += value
-                cost_sum += value * kwh_price
-
-                consumption_statistics.append(
-                    StatisticData(start=key, sum=consumption_sum, state=value)
-                )
-
-                cost_statistics.append(
-                    StatisticData(start=key, sum=cost_sum, state=value * kwh_price)
-                )
-
-            if readings_by_hour:
-                _LOGGER.debug(
-                    f"[IEC Statistics] Last hour fetched for C[{contract_id}] D[{device.device_number}]: "
-                    f"{max(readings_by_hour, key=lambda k: k)}"
-                )
-                _LOGGER.debug(
-                    f"[IEC Statistics] New Consumption Sum for C[{contract_id}] D[{device.device_number}]: {consumption_sum}"
-                )
-                _LOGGER.debug(
-                    f"[IEC Statistics] New Estimated Cost Sum for C[{contract_id}] D[{device.device_number}]: {cost_sum}"
-                )
-
             async_add_external_statistics(
-                self.hass, consumption_metadata, consumption_statistics
+                self.hass,
+                consumption_metadata,
+                [StatisticData(start=target_dt, sum=existing_consumption_sum, state=0)],
+            )
+            async_add_external_statistics(
+                self.hass,
+                cost_metadata,
+                [StatisticData(start=target_dt, sum=existing_cost_sum, state=0)],
             )
 
-            async_add_external_statistics(self.hass, cost_metadata, cost_statistics)
+            _LOGGER.info(
+                "[IEC Statistics] Inserted zero-value statistic at %s for device %s",
+                target_dt.strftime("%Y-%m-%d %H:%M:%S"),
+                device_number,
+            )
+
+            return {
+                "success": True,
+                "device_number": device_number,
+                "datetime": target_dt.isoformat(),
+            }
 
     async def _estimate_bill(
         self,
