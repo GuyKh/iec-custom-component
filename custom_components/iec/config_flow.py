@@ -119,25 +119,38 @@ async def _build_bp_number_to_contract(
 ) -> tuple[dict[str, list[int]], dict[str, str]]:
     bp_number_to_contract: dict[str, set[int]] = defaultdict(set)
     contract_labels: dict[str, str] = {}
+    
+    user_profile = None
+    bp_numbers = set()
 
     try:
         user_profile = await client.get_masa_contact_account_user_profile()
+        if user_profile and user_profile.accounts:
+            bp_numbers.update(
+                normalized_bp
+                for account in user_profile.accounts
+                if (normalized_bp := _normalize_bp_number(account.account_number)) is not None
+            )
     except Exception as err:  # noqa: BLE001
         _LOGGER.debug("Failed to fetch user profile for shared accounts: %s", err)
-        return {}, {}
 
-    if not user_profile:
-        return {}, {}
+    # Fallback: If masa API failed or returned empty accounts, try get_customer
+    if not bp_numbers:
+        try:
+            customer = await client.get_customer()
+            if customer and customer.bp_number:
+                normalized_bp = _normalize_bp_number(customer.bp_number)
+                if normalized_bp:
+                    bp_numbers.add(normalized_bp)
+        except Exception as err:
+            _LOGGER.debug("Fallback to get_customer failed: %s", err)
 
-    bp_numbers = {
-        normalized_bp
-        for account in user_profile.accounts or []
-        if (normalized_bp := _normalize_bp_number(account.account_number)) is not None
-    }
+    if not bp_numbers:
+        return {}, {}
 
     for bp_number in bp_numbers:
         try:
-            contracts: list[Contract] = await client.get_contracts(bp_number)
+            contracts = await client.get_contracts(bp_number)
         except Exception as err:  # noqa: BLE001
             _LOGGER.debug("Failed to fetch contracts for bp %s: %s", bp_number, err)
             continue
