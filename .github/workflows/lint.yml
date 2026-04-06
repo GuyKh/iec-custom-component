@@ -27,3 +27,22 @@ jobs:
 
         - name: "Run"
           run: python3 -m ruff check .
+
+  mypy:
+    name: "MyPy"
+    runs-on: "ubuntu-latest"
+    steps:
+        - name: "Checkout the repository"
+          uses: "actions/checkout@v6.0.2"
+
+        - name: "Set up Python"
+          uses: actions/setup-python@v6.2.0
+          with:
+            python-version: "3.14"
+            cache: "pip"
+
+        - name: "Install requirements"
+          run: python3 -m pip install -r requirements.txt
+
+        - name: "Run type checking"
+          run: ./scripts/typecheck

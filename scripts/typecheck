@@ -8,5 +8,6 @@ python3 -m mypy \
     --cache-dir /tmp/mypy_cache_iec \
     --namespace-packages \
     --explicit-package-bases \
+    --check-untyped-defs \
     --disable-error-code=import-untyped \
     custom_components/iec

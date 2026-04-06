@@ -8,16 +8,30 @@ import socket
 import traceback
 from collections import Counter
 from datetime import date, datetime, timedelta, time
-from typing import Any, cast  # noqa: UP035
+from typing import Any, Callable  # noqa: UP035
 from uuid import UUID
 
 import jwt
+from aiohttp import ClientTimeout
 from homeassistant.components.recorder import get_instance
 from homeassistant.components.recorder.models import (
     StatisticData,
-    StatisticMeanType,
     StatisticMetaData,
 )
+
+try:
+    from homeassistant.components.recorder.models import StatisticMeanType
+except ImportError:
+    # Fallback for environments with older Home Assistant versions (<2025.10)
+    from enum import StrEnum
+
+    class StatisticMeanType(StrEnum):  # type: ignore[no-redef]
+        """Statistic mean type."""
+
+        NONE = "none"
+        ARITHMETIC = "arithmetic"
+        CIRCULAR = "circular"
+
 from homeassistant.components.recorder.statistics import (
     async_add_external_statistics,
     get_last_statistics,
@@ -27,20 +41,21 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_API_TOKEN, UnitOfEnergy
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.util.unit_conversion import EnergyConverter
 from homeassistant.helpers import aiohttp_client
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from iec_api.iec_client import IecClient
 from iec_api.models.contract import Contract
-from iec_api.models.device import Device, Devices
-from iec_api.models.device_in import DeviceInResponse
+from iec_api.models.device import Devices
+from iec_api.models.device_in import DeviceInDevice
 from iec_api.models.exceptions import IECError
 from iec_api.models.jwt import JWT
 from iec_api.models.meter_reading import MeterReading
 from iec_api.models.remote_reading import (
     FutureConsumptionInfo,
     MeterReadingData,
-    ReadingResolution,
     PeriodConsumption,
+    ReadingResolution,
     RemoteReadingResponse,
 )
 
@@ -97,12 +112,12 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         super().__init__(
             hass,
             _LOGGER,
-            config_entry=config_entry,
             name="Iec",
             # Data is updated daily on IEC.
             # Refresh every 1h to be at most 5h behind.
             update_interval=timedelta(hours=1),
         )
+        self.config_entry = config_entry
         _LOGGER.debug("Initializing IEC Coordinator")
         self._config_entry = config_entry
         self._bp_number = config_entry.data.get(CONF_BP_NUMBER)
@@ -117,17 +132,17 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         for bp_number, contract_ids in self._bp_number_to_contract.items():
             for contract_id in contract_ids:
                 self._contract_to_bp_number[contract_id] = bp_number
-        self._entry_data = config_entry.data
-        self._today_readings = {}
-        self._devices_by_contract_id = {}
-        self._last_meter_reading = {}
-        self._devices_by_meter_id = {}
-        self._delivery_tariff_by_phase = {}
-        self._distribution_tariff_by_phase = {}
-        self._power_size_by_connection_size = {}
+        self._entry_data: dict[str, Any] = dict(config_entry.data)
+        self._today_readings: dict[str, RemoteReadingResponse] = {}
+        self._devices_by_contract_id: dict[int, list[DeviceInDevice]] = {}
+        self._last_meter_reading: dict[tuple[int, int], MeterReading] = {}
+        self._devices_by_meter_id: dict[str, Devices] = {}
+        self._delivery_tariff_by_phase: dict[int, float] = {}
+        self._distribution_tariff_by_phase: dict[int, float] = {}
+        self._power_size_by_connection_size: dict[str, float] = {}
         self._kwh_tariff: float | None = None
         self._kva_tariff: float | None = None
-        self._readings = {}
+        self._readings: dict[tuple[int, int, int, str, str], RemoteReadingResponse] = {}
         self._default_account_id: UUID | None = None
         self._account_id_by_contract: dict[int, UUID] = {}
         self._shared_contract_ids: set[int] = set()
@@ -150,7 +165,9 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         # Needed when the _async_update_data below returns {} for utilities that don't provide
         # forecast, which results to no sensors added, no registered listeners, and thus
         # _async_update_data not periodically getting called which is needed for _insert_statistics.
-        self._dummy_listener_unsub = self.async_add_listener(_dummy_listener)
+        self._dummy_listener_unsub: Callable[[], None] | None = self.async_add_listener(
+            _dummy_listener
+        )
 
     async def async_unload(self):
         """Unload the coordinator, cancel any pending tasks."""
@@ -324,7 +341,10 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         if not self._bp_number and not self._bp_number_to_contract:
             try:
                 customer = await self.api.get_customer()
-                self._bp_number = customer.bp_number
+                if customer:
+                    self._bp_number = customer.bp_number
+                else:
+                    self._bp_number = None
             except asyncio.CancelledError:
                 _LOGGER.warning(
                     "Fetching customer was cancelled; using empty BP number and skipping contracts"
@@ -371,7 +391,9 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             if c.status == 1 and int(c.contract_id) in self._contract_ids
         }
 
-    async def _get_devices_by_contract_id(self, contract_id) -> list[DeviceInResponse]:
+    async def _get_devices_by_contract_id(
+        self, contract_id: int
+    ) -> list[DeviceInDevice]:
         devices = self._devices_by_contract_id.get(contract_id)
         if not devices:
             try:
@@ -386,47 +408,57 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 _LOGGER.exception(
                     f"Failed fetching devices by contract {contract_id}", e
                 )
-        return devices
+                devices = []
+        return devices or []
 
-    async def _get_devices_by_device_id(self, meter_id) -> Devices:
+    async def _get_devices_by_device_id(self, meter_id: str) -> Devices | None:
         devices = self._devices_by_meter_id.get(meter_id)
         if not devices:
             try:
-                devices = await self.api.get_device_by_device_id(str(meter_id))
-                self._devices_by_meter_id[meter_id] = devices
+                devices = await self.api.get_device_by_device_id(meter_id)
+                if devices:
+                    self._devices_by_meter_id[meter_id] = devices
             except IECError as e:
                 _LOGGER.exception(
                     f"Failed fetching device details by meter id {meter_id}", e
                 )
-        return devices
+        return self._devices_by_meter_id.get(meter_id)
 
     async def _get_last_meter_reading(
-        self, bp_number, contract_id, meter_id
-    ) -> MeterReading:
+        self, bp_number: str, contract_id: int, meter_id: str | int
+    ) -> MeterReading | None:
         key = (contract_id, int(meter_id))
         last_meter_reading = self._last_meter_reading.get(key)
         if not last_meter_reading:
             try:
                 meter_readings = await self.api.get_last_meter_reading(
-                    bp_number, contract_id
+                    bp_number, str(contract_id)
                 )
 
-                for reading in meter_readings.last_meters:
-                    reading_meter_id = int(reading.serial_number)
-                    if len(reading.meter_readings) > 0:
-                        readings = reading.meter_readings
-                        readings.sort(key=lambda rdng: rdng.reading_date, reverse=True)
-                        last_meter_reading = readings[0]
-                        _LOGGER.debug(
-                            f"Last Reading for contract {contract_id}, Meter {reading_meter_id}: "
-                            f"{last_meter_reading}"
-                        )
-                        reading_key = (contract_id, reading_meter_id)
-                        self._last_meter_reading[reading_key] = last_meter_reading
-                    else:
-                        _LOGGER.debug(
-                            f"No Reading found for contract {contract_id}, Meter {reading_meter_id}"
-                        )
+                if meter_readings and meter_readings.last_meters:
+                    for reading in meter_readings.last_meters:
+                        reading_meter_id = int(reading.serial_number)
+                        if len(reading.meter_readings) > 0:
+                            readings_list = reading.meter_readings
+                            readings_list.sort(
+                                key=lambda rdng: (
+                                    rdng.reading_date
+                                    if rdng.reading_date
+                                    else datetime.min
+                                ),
+                                reverse=True,
+                            )
+                            last_meter_reading = readings_list[0]
+                            _LOGGER.debug(
+                                f"Last Reading for contract {contract_id}, Meter {reading_meter_id}: "
+                                f"{last_meter_reading}"
+                            )
+                            reading_key = (contract_id, reading_meter_id)
+                            self._last_meter_reading[reading_key] = last_meter_reading
+                        else:
+                            _LOGGER.debug(
+                                f"No Reading found for contract {contract_id}, Meter {reading_meter_id}"
+                            )
             except IECError as e:
                 _LOGGER.exception(
                     f"Failed fetching device details by meter id {meter_id}", e
@@ -500,7 +532,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         try:
             async with session.get(
                 "https://iecapi.iec.co.il/api/content/he-IL/calculators/period",
-                timeout=30,
+                timeout=ClientTimeout(total=30),
             ) as resp:
                 if resp.status == 200:
                     data = await resp.json(content_type=None)
@@ -528,7 +560,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             try:
                 async with session.get(
                     "https://iecapi.iec.co.il/api/content/he-IL/calculators/gadget",
-                    timeout=30,
+                    timeout=ClientTimeout(total=30),
                 ) as resp:
                     if resp.status == 200:
                         data = await resp.json(content_type=None)
@@ -634,7 +666,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
         try:
             connection_size = await self.api.get_masa_connection_size_from_masa(
-                account_id
+                str(account_id) if account_id else None
             )
             if connection_size:
                 self._connection_size_by_account_id[account_id] = connection_size
@@ -668,7 +700,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         resolution: ReadingResolution,
         meter_kind: str,
         last_invoice_date: datetime | None = None,
-    ):
+    ) -> RemoteReadingResponse | None:
         mapped_meter_kind = self._map_meter_kind_to_remote_reading_param(meter_kind)
         date_key = reading_date.strftime("%Y")
         match resolution:
@@ -694,14 +726,15 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             try:
                 reading = await self.api.get_remote_reading(
                     mapped_meter_kind,
-                    device_id,
+                    str(device_id),
                     int(device_code),
                     last_invoice_date if last_invoice_date else reading_date,
                     reading_date,
                     resolution,
                     str(contract_id),
                 )
-                self._readings[key] = reading
+                if reading:
+                    self._readings[key] = reading
             except IECError as e:
                 _LOGGER.exception(
                     f"Failed fetching reading for Contract: {contract_id},"
@@ -761,7 +794,9 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         return None
 
     @staticmethod
-    def _get_invoice_reading_dates(invoices: list) -> tuple[datetime | None, datetime | None]:
+    def _get_invoice_reading_dates(
+        invoices: list,
+    ) -> tuple[datetime | None, datetime | None]:
         """Get the last invoice date and from date for RemoteReadingRange API call.
 
         Returns: (last_invoice_date, from_date) tuple.
@@ -776,7 +811,9 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         # Sort by lastDate descending to find the most recent one
         sorted_invoices = sorted(
             invoices,
-            key=lambda inv: IecApiCoordinator._parse_invoice_last_date(inv.last_date) or date.min,
+            key=lambda inv: (
+                IecApiCoordinator._parse_invoice_last_date(inv.last_date) or date.min
+            ),
             reverse=True,
         )
 
@@ -785,20 +822,24 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
         # Find the last invoice where lastDate <= today
         for i, invoice in enumerate(sorted_invoices):
-            parsed_last_date = IecApiCoordinator._parse_invoice_last_date(invoice.last_date)
+            parsed_last_date = IecApiCoordinator._parse_invoice_last_date(
+                invoice.last_date
+            )
             if parsed_last_date and parsed_last_date <= today:
-                last_invoice_date_obj = parsed_last_date
+                last_invoice_date_obj = datetime.combine(parsed_last_date, time.min)
                 # Use the next invoice's toDate as fromDate, or today if no next invoice
                 if i + 1 < len(sorted_invoices):
-                    from_date_obj = sorted_invoices[i + 1].to_date
+                    to_date = sorted_invoices[i + 1].to_date
+                    from_date_obj = (
+                        to_date
+                        if isinstance(to_date, datetime)
+                        else datetime.combine(to_date, time.min)
+                    )
                 else:
                     from_date_obj = datetime.combine(today, time.min)
                 break
 
-        return (
-            datetime.combine(last_invoice_date_obj, time.min) if last_invoice_date_obj else None,
-            from_date_obj,
-        )
+        return (last_invoice_date_obj, from_date_obj)
 
     @staticmethod
     def _extract_valid_future_consumption(
@@ -824,7 +865,6 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         if total_import_date is None or total_import_date == date.min:
             return None
 
-
         if (future_info.future_consumption and future_info.future_consumption > 0) or (
             future_info.total_import and future_info.total_import > 0
         ):
@@ -836,11 +876,14 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         self,
         daily_readings: dict[str, list[PeriodConsumption]],
         desired_date: date,
-        device: Device,
+        device: DeviceInDevice,
         contract_id: int,
         prefetched_reading: RemoteReadingResponse | None = None,
         last_invoice_date: datetime | None = None,
     ):
+        if not device.device_number:
+            return
+
         if not daily_readings.get(device.device_number):
             daily_readings[device.device_number] = []
 
@@ -862,7 +905,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     device.device_number,
                     device.device_code,
                     datetime.fromordinal(desired_date.toordinal()),
-                    ReadingResolution.MONTHLY,
+                    ReadingResolution.DAILY,
                     device.meter_kind,
                     last_invoice_date,
                 )
@@ -907,7 +950,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     daily_readings[device.device_number].append(
                         PeriodConsumption(
                             status=0,
-                            interval=desired_date,
+                            interval=datetime.combine(desired_date, time.min),
                             consumption=desired_date_reading.consumption,
                             back_stream=0,
                         )
@@ -980,7 +1023,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             else:
                 try:
                     billing_invoices = await self.api.get_billing_invoices(
-                        bp_number_for_contract, contract_id
+                        bp_number_for_contract, str(contract_id)
                     )
                 except asyncio.CancelledError:
                     _LOGGER.warning(
@@ -1008,7 +1051,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 )
                 # Keep the first invoice (most recent by full_date) for other uses
                 billing_invoices.invoices.sort(
-                    key=lambda inv: inv.full_date, reverse=True
+                    key=lambda inv: inv.full_date or datetime.min, reverse=True
                 )
                 last_invoice = billing_invoices.invoices[0]
             else:
@@ -1016,8 +1059,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 last_invoice_date = None
                 from_date = None
 
-            future_consumption: dict[str, FutureConsumptionInfo | None] | None = {}
-            daily_readings: dict[str, list[PeriodConsumption] | None] | None = {}
+            future_consumption: dict[str, FutureConsumptionInfo | None] = {}
+            daily_readings: dict[str, list[PeriodConsumption]] = {}
             backstream_meters: dict[str, bool] = {}
             backstream_totals: dict[str, dict[str, float | None]] = {}
 
@@ -1048,35 +1091,34 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     reading_date: date | None = None
 
                     if localized_today.date() != localized_first_of_month.date():
-                        reading_type: ReadingResolution | None = (
-                            ReadingResolution.MONTHLY
-                        )
-                        reading_date: date | None = localized_first_of_month
+                        reading_type = ReadingResolution.MONTHLY
+                        reading_date = localized_first_of_month.date()
                     elif localized_today.date().isoweekday() != 7:
                         # If today's the 1st of the month, but not sunday, get weekly from yesterday
                         yesterday = localized_today - timedelta(days=1)
-                        reading_type: ReadingResolution | None = (
-                            ReadingResolution.WEEKLY
-                        )
-                        reading_date: date | None = yesterday
+                        reading_type = ReadingResolution.WEEKLY
+                        reading_date = yesterday.date()
                     else:
                         # Today is the 1st and is Monday (since monday.isoweekday==1)
                         last_month_first_of_the_month = (
                             localized_first_of_month - timedelta(days=1)
                         ).replace(day=1)
 
-                        reading_type: ReadingResolution | None = (
-                            ReadingResolution.MONTHLY
-                        )
-                        reading_date: date | None = last_month_first_of_the_month
+                        reading_type = ReadingResolution.MONTHLY
+                        reading_date = last_month_first_of_the_month.date()
 
                     _LOGGER.debug(
                         f"Fetching {reading_type.name} readings from {reading_date}"
                     )
                     # Use invoice-based date for MONTHLY readings, otherwise use computed date
-                    actual_reading_date = reading_date
+                    assert reading_date is not None
+                    actual_reading_date = datetime.combine(reading_date, time.min)
                     actual_last_invoice_date = None
-                    if reading_type == ReadingResolution.MONTHLY and from_date and last_invoice_date:
+                    if (
+                        reading_type == ReadingResolution.MONTHLY
+                        and from_date
+                        and last_invoice_date
+                    ):
                         actual_reading_date = from_date
                         actual_last_invoice_date = last_invoice_date
 
@@ -1169,7 +1211,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                             ReadingResolution.DAILY,
                             device.meter_kind,
                         )
-                        self._today_readings[today_reading_key] = today_reading
+                        if today_reading:
+                            self._today_readings[today_reading_key] = today_reading
 
                     # fallbacks for future consumption since IEC api is broken :/
                     if not future_consumption.get(device.device_number):
@@ -1178,16 +1221,17 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                                 self._today_readings.get(today_reading_key),
                             )
                         )
-                        _LOGGER.debug("Today's future consumption extraction result: %s", today_future_consumption)
+                        _LOGGER.debug(
+                            "Today's future consumption extraction result: %s",
+                            today_future_consumption,
+                        )
 
                         if today_future_consumption:
                             future_consumption[device.device_number] = (
                                 today_future_consumption
                             )
                             backstream_totals[device.device_number] = (
-                                self._build_backstream_totals(
-                                    today_future_consumption
-                                )
+                                self._build_backstream_totals(today_future_consumption)
                             )
                         else:
                             req_date = localized_today - timedelta(days=2)
@@ -1321,11 +1365,17 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     break  # Success, exit retry loop
                 except IECError as check_err:
                     if attempt == max_retries - 1:  # Last attempt
-                        _LOGGER.error(f"Token check failed after {max_retries} attempts: {check_err}")
+                        _LOGGER.error(
+                            f"Token check failed after {max_retries} attempts: {check_err}"
+                        )
                         raise  # Re-raise to be caught by outer exception handler
                     else:
-                        delay = base_delay * (2 ** attempt)  # Exponential backoff: 5, 10, 20 seconds
-                        _LOGGER.warning(f"Token check attempt {attempt + 1} failed: {check_err}. Retrying in {delay} seconds...")
+                        delay = base_delay * (
+                            2**attempt
+                        )  # Exponential backoff: 5, 10, 20 seconds
+                        _LOGGER.warning(
+                            f"Token check attempt {attempt + 1} failed: {check_err}. Retrying in {delay} seconds..."
+                        )
                         await asyncio.sleep(delay)
 
             new_token = self.api.get_token()
@@ -1351,7 +1401,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         except Exception as err:
             _LOGGER.error("Failed updating data. Exception: %s", err)
             _LOGGER.error(traceback.format_exc())
-            raise UpdateFailed("Failed Updating IEC data", retry_after=60) from err
+            raise UpdateFailed("Failed Updating IEC data") from err
 
     async def _insert_statistics(self, contract_id: int, is_smart_meter: bool) -> None:
         if not is_smart_meter:
@@ -1423,7 +1473,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 _LOGGER.debug(
                     f"[IEC Statistics] Fetching consumption from {month_ago_time.strftime('%Y-%m-%d %H:%M:%S')}"
                 )
-                last_stat_time = 0
+                last_stat_time = 0.0
                 readings = await self._get_readings(
                     contract_id,
                     device.device_number,
@@ -1473,7 +1523,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     ReadingResolution.DAILY,
                     device.meter_kind,
                 )
-                if from_date.date() == localized_today.date():
+                if from_date.date() == localized_today.date() and readings:
                     self._today_readings[
                         str(contract_id) + "-" + device.device_number
                     ] = readings
@@ -1519,27 +1569,22 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
             if not stats.get(consumption_statistic_id):
                 _LOGGER.debug("[IEC Statistics] No recent usage data")
-                consumption_sum = 0
+                consumption_sum = 0.0
             else:
-                consumption_sum = cast(float, stats[consumption_statistic_id][0]["sum"])
+                consumption_sum = stats[consumption_statistic_id][0]["sum"] or 0.0
 
             if not stats.get(cost_statistic_id):
-                if not stats.get(consumption_statistic_id):
-                    _LOGGER.debug("[IEC Statistics] No recent cost data")
-                    cost_sum = 0.0
-                else:
-                    cost_sum = (
-                        cast(float, stats[consumption_statistic_id][0]["sum"])
-                        * kwh_price
-                    )
+                _LOGGER.debug("[IEC Statistics] No recent cost data")
+                consumption_sum = stats[consumption_statistic_id][0]["sum"] or 0.0
+                cost_sum = consumption_sum * kwh_price
             else:
-                cost_sum = cast(float, stats[cost_statistic_id][0]["sum"])
+                cost_sum = stats[cost_statistic_id][0]["sum"] or 0.0
 
             if not stats.get(production_statistic_id):
                 _LOGGER.debug("[IEC Statistics] No recent production data")
                 production_sum = 0.0
             else:
-                production_sum = cast(float, stats[production_statistic_id][0]["sum"])
+                production_sum = stats[production_statistic_id][0]["sum"] or 0.0
 
             _LOGGER.debug(
                 f"[IEC Statistics] Last Consumption Sum for C[{contract_id}] D[{device.device_number}]: {consumption_sum}"
@@ -1548,12 +1593,14 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 f"[IEC Statistics] Last Estimated Cost Sum for C[{contract_id}] D[{device.device_number}]: {cost_sum}"
             )
 
-            new_readings: list[PeriodConsumption] = filter(
-                lambda reading: (
-                    reading.interval
-                    >= localize_datetime(datetime.fromtimestamp(last_stat_time))
-                ),
-                readings.meter_list[0].period_consumptions,
+            new_readings: list[PeriodConsumption] = list(
+                filter(
+                    lambda reading: (
+                        reading.interval
+                        >= localize_datetime(datetime.fromtimestamp(last_stat_time))
+                    ),
+                    readings.meter_list[0].period_consumptions,
+                )
             )
 
             grouped_new_readings_by_hour = itertools.groupby(
@@ -1588,36 +1635,38 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 backstream_by_hour[key] = sum(
                     reading.back_stream or 0 for reading in group_list
                 )
+            consumption_metadata: StatisticMetaData = {
+                "has_mean": False,
+                "has_sum": True,
+                "mean_type": StatisticMeanType.NONE,  # type: ignore[typeddict-item]
+                "unit_class": EnergyConverter,  # type: ignore[typeddict-item]
+                "name": f"IEC Meter {device.device_number} Consumption",
+                "source": DOMAIN,
+                "statistic_id": consumption_statistic_id,
+                "unit_of_measurement": UnitOfEnergy.KILO_WATT_HOUR,
+            }
 
-            consumption_metadata = StatisticMetaData(
-                has_mean=False,
-                has_sum=True,
-                name=f"IEC Meter {device.device_number} Consumption",
-                source=DOMAIN,
-                statistic_id=consumption_statistic_id,
-                unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
-                mean_type=StatisticMeanType.NONE,
-            )
+            cost_metadata: StatisticMetaData = {
+                "has_mean": False,
+                "has_sum": True,
+                "mean_type": StatisticMeanType.NONE,  # type: ignore[typeddict-item]
+                "unit_class": None,  # type: ignore[typeddict-item]
+                "name": f"IEC Meter {device.device_number} Estimated Cost",
+                "source": DOMAIN,
+                "statistic_id": cost_statistic_id,
+                "unit_of_measurement": ILS,
+            }
 
-            cost_metadata = StatisticMetaData(
-                has_mean=False,
-                has_sum=True,
-                name=f"IEC Meter {device.device_number} Estimated Cost",
-                source=DOMAIN,
-                statistic_id=cost_statistic_id,
-                unit_of_measurement=ILS,
-                mean_type=StatisticMeanType.NONE,
-            )
-
-            production_metadata = StatisticMetaData(
-                has_mean=False,
-                has_sum=True,
-                name=f"IEC Meter {device.device_number} Production",
-                source=DOMAIN,
-                statistic_id=production_statistic_id,
-                unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
-                mean_type=StatisticMeanType.NONE,
-            )
+            production_metadata: StatisticMetaData = {
+                "has_mean": False,
+                "has_sum": True,
+                "mean_type": StatisticMeanType.NONE,  # type: ignore[typeddict-item]
+                "unit_class": EnergyConverter,  # type: ignore[typeddict-item]
+                "name": f"IEC Meter {device.device_number} Production",
+                "source": DOMAIN,
+                "statistic_id": production_statistic_id,
+                "unit_of_measurement": UnitOfEnergy.KILO_WATT_HOUR,
+            }
 
             consumption_statistics = []
             cost_statistics = []
@@ -1686,12 +1735,11 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
         if not is_private_producer:
             try:
-                devices_by_id: Devices = await self._get_devices_by_device_id(
-                    device_number
-                )
+                devices_by_id = await self._get_devices_by_device_id(device_number)
 
                 if (
-                    devices_by_id.counter_devices
+                    devices_by_id
+                    and devices_by_id.counter_devices
                     and len(devices_by_id.counter_devices) >= 1
                 ):
                     last_meter_read = int(devices_by_id.counter_devices[0].last_mr)
@@ -1737,7 +1785,11 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 last_invoice = EMPTY_INVOICE
             else:
                 last_meter_read = last_meter_reading.reading
-                last_meter_read_date = last_meter_reading.reading_date.date()
+                last_meter_read_date = (
+                    last_meter_reading.reading_date.date()
+                    if last_meter_reading.reading_date
+                    else localize_datetime(datetime.now()).date()
+                )
 
             account_id = await self._get_account_id(contract_id)
             connection_size = await self._get_connection_size(account_id)
@@ -1793,7 +1845,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         future_consumption_info: FutureConsumptionInfo | None = future_consumptions.get(
             meter_id
         )
-        future_consumption = 0
+        future_consumption = 0.0
 
         if last_meter_read and future_consumption_info:
             if future_consumption_info.total_import:
@@ -1810,7 +1862,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     f"Failed to calculate Future Consumption for meter {meter_id} "
                     f"(missing total_import), defaulting forecasted consumption to 0"
                 )
-                future_consumption = 0
+                future_consumption = 0.0
 
         kva_price = power_size * kva_tariff / 365
 
@@ -1825,7 +1877,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
         if last_invoice != EMPTY_INVOICE:
             current_date = last_meter_read_date + timedelta(days=1)
-            month_counter = Counter()
+            month_counter: Counter[tuple[int, int]] = Counter()
 
             while current_date <= today.date():
                 # Use (year, month) as the key for counting
