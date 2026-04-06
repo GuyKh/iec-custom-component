@@ -6,6 +6,7 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from typing import Any
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -61,9 +62,10 @@ _LOGGER = logging.getLogger(__name__)
 class IecEntityDescriptionMixin:
     """Mixin values for required keys."""
 
-    value_fn: Callable[[dict | tuple], str | float | date] | None = None
+    value_fn: Callable[[dict[Any, Any]], str | float | date | None] | None = None
     custom_attrs_fn: (
-        Callable[[dict | tuple], dict[str, str | int | float | date]] | None
+        Callable[[dict[Any, Any] | None], dict[str, str | int | float | date] | None]
+        | None
     ) = None
 
 
@@ -126,7 +128,7 @@ def _get_reading_by_date(
         return EMPTY_REMOTE_READING
 
 
-def _is_backstream_meter(data: dict) -> bool:
+def _is_backstream_meter(data: dict[Any, Any]) -> bool:
     meter_id = data[ATTRIBUTES_DICT_NAME][METER_ID_ATTR_NAME]
     return bool(
         data.get(BACKSTREAM_METERS_DICT_NAME)
@@ -134,7 +136,7 @@ def _is_backstream_meter(data: dict) -> bool:
     )
 
 
-def _get_backstream_total(data: dict, key: str) -> float | None:
+def _get_backstream_total(data: dict[Any, Any], key: str) -> float | None:
     if not _is_backstream_meter(data):
         return None
 
@@ -149,16 +151,22 @@ DIAGNOSTICS_SENSORS: tuple[IecEntityDescription, ...] = (
         key="access_token_expiry_time",
         device_class=SensorDeviceClass.TIMESTAMP,
         entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: datetime.fromtimestamp(
-            data[ACCESS_TOKEN_EXPIRATION_TIME], tz=TIMEZONE
+        value_fn=lambda data: (
+            datetime.fromtimestamp(
+                data.get(ACCESS_TOKEN_EXPIRATION_TIME, 0), tz=TIMEZONE
+            )
+            if isinstance(data, dict)
+            else None
         ),
     ),
     IecEntityDescription(
         key="access_token_issued_at",
         device_class=SensorDeviceClass.TIMESTAMP,
         entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: datetime.fromtimestamp(
-            data[ACCESS_TOKEN_ISSUED_AT], tz=TIMEZONE
+        value_fn=lambda data: (
+            datetime.fromtimestamp(data.get(ACCESS_TOKEN_ISSUED_AT, 0), tz=TIMEZONE)
+            if isinstance(data, dict)
+            else None
         ),
     ),
 )
@@ -191,7 +199,7 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         # The API doesn't provide future *cost* so we can try to estimate it by the previous consumption
         value_fn=lambda data: (
             (data[ESTIMATED_BILL_DICT_NAME][TOTAL_EST_BILL_ATTR_NAME])
-            if data[ESTIMATED_BILL_DICT_NAME]
+            if data and data.get(ESTIMATED_BILL_DICT_NAME)
             else 0
         ),
         custom_attrs_fn=lambda data: (
@@ -212,7 +220,7 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
                     EST_BILL_TOTAL_KVA_PRICE_ATTR_NAME
                 ],
             }
-            if data[ESTIMATED_BILL_DICT_NAME]
+            if data and data.get(ESTIMATED_BILL_DICT_NAME)
             else None
         ),
     ),
@@ -409,7 +417,9 @@ ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         key="iec_bill_last_payment_date",
         device_class=SensorDeviceClass.DATE,
         value_fn=lambda data: (
-            data[INVOICE_DICT_NAME].last_date
+            IecApiCoordinator._parse_invoice_last_date(
+                data[INVOICE_DICT_NAME].last_date
+            )
             if (data[INVOICE_DICT_NAME] != EMPTY_INVOICE)
             else None
         ),
@@ -490,14 +500,11 @@ async def async_setup_entry(
                     meter_id
                     and contract_data.get(BACKSTREAM_METERS_DICT_NAME, {}).get(meter_id)
                 )
-                sensors_desc: tuple[IecEntityDescription, ...] = (
-                    ELEC_SENSORS + SMART_ELEC_SENSORS
-                )
+                sensors_desc = ELEC_SENSORS + SMART_ELEC_SENSORS
                 if has_backstream_meter:
                     sensors_desc += BACKSTREAM_ELEC_SENSORS
             else:
-                sensors_desc: tuple[IecEntityDescription, ...] = ELEC_SENSORS
-            # sensors_desc: tuple[IecEntityDescription, ...] = ELEC_SENSORS
+                sensors_desc = ELEC_SENSORS
 
             contract_id = coordinator.data[contract_key][CONTRACT_DICT_NAME].contract_id
             for sensor_desc in sensors_desc:
@@ -540,7 +547,7 @@ class IecSensor(IecEntity, SensorEntity):
         self._attr_translation_key = f"{description.key}"
         self._attr_translation_placeholders = {"multi_contract": f"of {contract_id}"}
 
-        attributes = {"contract_id": contract_id}
+        attributes: dict[str, Any] = {"contract_id": contract_id}
 
         if attributes_to_add:
             attributes.update(attributes_to_add)
@@ -553,7 +560,7 @@ class IecSensor(IecEntity, SensorEntity):
                 attributes.update(custom_attr)
 
         if is_multi_contract:
-            attributes["is_multi_contract"] = is_multi_contract
+            attributes["is_multi_contract"] = True
             self._attr_translation_placeholders = {
                 "multi_contract": f" of {contract_id}"
             }
@@ -563,16 +570,24 @@ class IecSensor(IecEntity, SensorEntity):
         self._attr_extra_state_attributes = attributes
 
     @property
-    def native_value(self) -> StateType:
+    def native_value(self) -> StateType | date | datetime:
         """Return the state."""
-        if self.coordinator.data is not None:
+        if self.coordinator.data is not None and self.entity_description.value_fn:
+            value: str | float | date | datetime | None
             if self.contract_id in (STATICS_DICT_NAME, JWT_DICT_NAME):
-                return self.entity_description.value_fn(
-                    self.coordinator.data.get(self.contract_id, self.meter_id)
+                data = self.coordinator.data.get(self.contract_id)
+                value = (
+                    self.entity_description.value_fn(data) if data is not None else None
+                )
+            else:
+                # Trim leading 0000 if needed and align with coordinator keys
+                data = self.coordinator.data.get(str(int(self.contract_id)))
+                value = (
+                    self.entity_description.value_fn(data) if data is not None else None
                 )
 
-            # Trim leading 0000 if needed and align with coordinator keys
-            return self.entity_description.value_fn(
-                self.coordinator.data.get(str(int(self.contract_id)))
-            )
+            # Keep datetime objects for TIMESTAMP device class, convert only plain date objects
+            if isinstance(value, (datetime, date)):
+                return value
+            return value
         return None

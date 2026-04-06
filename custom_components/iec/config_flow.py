@@ -6,17 +6,26 @@ import logging
 import asyncio
 from collections import defaultdict
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.const import CONF_API_TOKEN
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.data_entry_flow import FlowResult
+
+if TYPE_CHECKING:
+    from typing import Any as ConfigFlowResult
+else:
+    try:
+        from homeassistant.config_entries import ConfigFlowResult
+    except ImportError:
+        ConfigFlowResult = Any
+
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 from homeassistant.helpers.config_validation import multi_select
 from iec_api.iec_client import IecClient
 from iec_api.models.contract import Contract
+from iec_api.masa_api_models.contact_account_user_profile import MainPortalContract
 from iec_api.models.exceptions import IECError
 from iec_api.models.jwt import JWT
 
@@ -65,7 +74,7 @@ async def _validate_login(
 
     elif login_data.get(CONF_API_TOKEN):
         try:
-            await api.load_jwt_token(JWT.from_dict(login_data.get(CONF_API_TOKEN)))
+            await api.load_jwt_token(JWT.from_dict(login_data[CONF_API_TOKEN]))
         except asyncio.CancelledError:
             return {"base": "cannot_connect"}
         except IECError:
@@ -154,11 +163,11 @@ async def _build_bp_number_to_contract(
 
     if user_profile and user_profile.connection_between_contact_and_contract:
         for connection in user_profile.connection_between_contact_and_contract:
-            contract = connection.contract
-            if not contract or not contract.site:
+            portal_contract: MainPortalContract = connection.contract
+            if not portal_contract or not portal_contract.site:
                 continue
 
-            contract_id = contract.contract_acc_number_in_shoval
+            contract_id = portal_contract.contract_acc_number_in_shoval
             if not contract_id:
                 continue
 
@@ -183,7 +192,7 @@ async def _build_bp_number_to_contract(
             bp_number_to_contract[shared_bp_number].add(normalized_contract_id)
             contract_labels[str(normalized_contract_id)] = _build_contract_label(
                 normalized_contract_id,
-                contract.site.full_address,
+                portal_contract.site.full_address,
             )
 
     return (
@@ -208,7 +217,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Handle the initial step."""
         errors: dict[str, str] = {}
         if user_input is not None:
@@ -238,7 +247,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_mfa(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Handle MFA step."""
         if not self.data or not self.data.get(CONF_USER_ID):
             return self.async_show_form(
@@ -247,6 +256,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors={"base": "invalid_auth"},
             )
 
+        assert self.client is not None
         client: IecClient = self.client
 
         errors: dict[str, str] = {}
@@ -261,9 +271,10 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         data.pop(CONF_TOTP_SECRET)
 
                     try:
-                        bp_number_to_contract, contract_labels = (
-                            await _build_bp_number_to_contract(client)
-                        )
+                        (
+                            bp_number_to_contract,
+                            contract_labels,
+                        ) = await _build_bp_number_to_contract(client)
                         contract_ids = sorted(
                             {
                                 contract_id
@@ -342,7 +353,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     @callback
-    def _async_create_iec_entry(self, data: dict[str, Any]) -> FlowResult:
+    def _async_create_iec_entry(self, data: dict[str, Any]) -> ConfigFlowResult:
         """Create the config entry."""
         return self.async_create_entry(
             title=f"IEC Account ({data[CONF_USER_ID]})",
@@ -351,7 +362,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_select_contracts(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Handle Select Contract step."""
         assert self.data is not None
         assert self.data.get(CONF_USER_ID) is not None
@@ -392,16 +403,18 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     str(contract_id)
                     for contract_id in self.data.get(CONF_AVAILABLE_CONTRACTS, [])
                 ],
-            ): multi_select(self.data.get(CONTRACT_OPTIONS_KEY))
+            ): multi_select(self.data.get(CONTRACT_OPTIONS_KEY))  # type: ignore
         }
 
-        return self.async_show_form(
+        return self.async_show_form(  # type: ignore
             step_id="select_contracts",
             data_schema=vol.Schema(schema),
             errors=errors,
         )
 
-    async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> FlowResult:
+    async def async_step_reauth(
+        self, entry_data: Mapping[str, Any]
+    ) -> ConfigFlowResult:
         """Handle configuration by re-auth."""
         self.reauth_entry = self.hass.config_entries.async_get_entry(
             self.context["entry_id"]
@@ -410,15 +423,15 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_reauth_confirm(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Dialog that informs the user that reauth is required."""
         assert self.reauth_entry
         errors: dict[str, str] = {}
 
-        client: IecClient = self.client
+        client = self.client
 
         if user_input is not None and user_input[CONF_TOTP_SECRET] is not None:
-            assert client
+            assert client is not None
             data = {**self.reauth_entry.data, **user_input}
             errors = await _validate_login(self.hass, data, client)
             if not errors:
@@ -431,7 +444,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     self.reauth_entry, data=data
                 )
                 await self.hass.config_entries.async_reload(self.reauth_entry.entry_id)
-                return self.async_abort(reason="reauth_successful")
+                return self.async_abort(reason="reauth_successful")  # type: ignore
 
         if not client:
             assert self.reauth_entry is not None
@@ -459,7 +472,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Required(CONF_TOTP_SECRET): str,
         }
 
-        return self.async_show_form(
+        return self.async_show_form(  # type: ignore
             step_id="reauth_confirm",
             description_placeholders={"otp_type": otp_type},
             data_schema=vol.Schema(schema),
