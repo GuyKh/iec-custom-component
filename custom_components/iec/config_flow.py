@@ -206,7 +206,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.data: dict[str, Any] | None = None
         self.client: IecClient | None = None
 
-    async def async_step_user(
+    async def async_step_user(  # type: ignore
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle the initial step."""
@@ -232,7 +232,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if not errors:
                 return await self.async_step_mfa()
 
-        return self.async_show_form(
+        return self.async_show_form(  # type: ignore
             step_id="user", data_schema=STEP_USER_DATA_SCHEMA, errors=errors
         )
 
@@ -241,7 +241,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> FlowResult:
         """Handle MFA step."""
         if not self.data or not self.data.get(CONF_USER_ID):
-            return self.async_show_form(
+            return self.async_show_form(  # type: ignore
                 step_id="user",
                 data_schema=STEP_USER_DATA_SCHEMA,
                 errors={"base": "invalid_auth"},
@@ -261,9 +261,10 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         data.pop(CONF_TOTP_SECRET)
 
                     try:
-                        bp_number_to_contract, contract_labels = (
-                            await _build_bp_number_to_contract(client)
-                        )
+                        (
+                            bp_number_to_contract,
+                            contract_labels,
+                        ) = await _build_bp_number_to_contract(client)
                         contract_ids = sorted(
                             {
                                 contract_id
@@ -334,7 +335,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors["base"] = errors.get("base") or "cannot_connect"
             otp_type = "OTP"
 
-        return self.async_show_form(
+        return self.async_show_form(  # type: ignore
             step_id="mfa",
             data_schema=vol.Schema(schema),
             description_placeholders={"otp_type": otp_type},
@@ -344,7 +345,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @callback
     def _async_create_iec_entry(self, data: dict[str, Any]) -> FlowResult:
         """Create the config entry."""
-        return self.async_create_entry(
+        return self.async_create_entry(  # type: ignore
             title=f"IEC Account ({data[CONF_USER_ID]})",
             data=data,
         )
@@ -392,10 +393,10 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     str(contract_id)
                     for contract_id in self.data.get(CONF_AVAILABLE_CONTRACTS, [])
                 ],
-            ): multi_select(self.data.get(CONTRACT_OPTIONS_KEY))
+            ): multi_select(self.data.get(CONTRACT_OPTIONS_KEY))  # type: ignore
         }
 
-        return self.async_show_form(
+        return self.async_show_form(  # type: ignore
             step_id="select_contracts",
             data_schema=vol.Schema(schema),
             errors=errors,
@@ -431,7 +432,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     self.reauth_entry, data=data
                 )
                 await self.hass.config_entries.async_reload(self.reauth_entry.entry_id)
-                return self.async_abort(reason="reauth_successful")
+                return self.async_abort(reason="reauth_successful")  # type: ignore
 
         if not client:
             assert self.reauth_entry is not None
@@ -459,7 +460,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Required(CONF_TOTP_SECRET): str,
         }
 
-        return self.async_show_form(
+        return self.async_show_form(  # type: ignore
             step_id="reauth_confirm",
             description_placeholders={"otp_type": otp_type},
             data_schema=vol.Schema(schema),
