@@ -6,7 +6,7 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
-from typing import Any, cast
+from typing import Any
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -574,11 +574,11 @@ class IecSensor(IecEntity, SensorEntity):
             value: str | float | date | datetime | None
             if self.contract_id in (STATICS_DICT_NAME, JWT_DICT_NAME):
                 data = self.coordinator.data.get(self.contract_id)
-                value = self.entity_description.value_fn(cast(dict[Any, Any], data))
+                value = self.entity_description.value_fn(data)
             else:
                 # Trim leading 0000 if needed and align with coordinator keys
                 data = self.coordinator.data.get(str(int(self.contract_id)))
-                value = self.entity_description.value_fn(cast(dict[Any, Any], data))
+                value = self.entity_description.value_fn(data)
 
             # Keep datetime objects for TIMESTAMP device class, convert only plain date objects
             if isinstance(value, (datetime, date)):

@@ -8,7 +8,7 @@ import socket
 import traceback
 from collections import Counter
 from datetime import date, datetime, timedelta, time
-from typing import Any, cast  # noqa: UP035
+from typing import Any  # noqa: UP035
 from uuid import UUID
 
 import jwt
@@ -1457,9 +1457,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 )
 
             else:
-                last_stat_time = cast(
-                    float, last_stat[consumption_statistic_id][0]["start"]
-                )  # type: ignore
+                last_stat_time = last_stat[consumption_statistic_id][0]["start"]
                 # API returns daily data, so need to increase the start date by 4 hrs to get the next day
                 from_date = localize_datetime(datetime.fromtimestamp(last_stat_time))
                 _LOGGER.debug(
@@ -1504,11 +1502,11 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     ] = readings
 
             if (
-                not readings
-                or not readings.meter_list
-                or not len(readings.meter_list) > 0
-                or not readings.meter_list[0].period_consumptions
-                or not len(readings.meter_list[0].period_consumptions) > 0
+            not readings
+            or not readings.meter_list
+            or not len(readings.meter_list) > 0
+            or not readings.meter_list[0].period_consumptions
+            or not len(readings.meter_list[0].period_consumptions) > 0
             ):
                 _LOGGER.debug("[IEC Statistics] No recent usage data. Skipping update")
                 continue
@@ -1546,25 +1544,20 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 _LOGGER.debug("[IEC Statistics] No recent usage data")
                 consumption_sum = 0.0
             else:
-                consumption_sum = cast(float, stats[consumption_statistic_id][0]["sum"])
+                consumption_sum = stats[consumption_statistic_id][0]["sum"]
 
             if not stats.get(cost_statistic_id):
-                if not stats.get(consumption_statistic_id):
-                    _LOGGER.debug("[IEC Statistics] No recent cost data")
-                    cost_sum = 0.0
-                else:
-                    cost_sum = (
-                        cast(float, stats[consumption_statistic_id][0]["sum"])
-                        * kwh_price
-                    )
+                _LOGGER.debug("[IEC Statistics] No recent cost data")
+                consumption_sum = stats[consumption_statistic_id][0]["sum"]
+                cost_sum = consumption_sum * kwh_price
             else:
-                cost_sum = cast(float, stats[cost_statistic_id][0]["sum"])
+                cost_sum = stats[cost_statistic_id][0]["sum"]
 
             if not stats.get(production_statistic_id):
                 _LOGGER.debug("[IEC Statistics] No recent production data")
                 production_sum = 0.0
             else:
-                production_sum = cast(float, stats[production_statistic_id][0]["sum"])
+                production_sum = stats[production_statistic_id][0]["sum"]
 
             _LOGGER.debug(
                 f"[IEC Statistics] Last Consumption Sum for C[{contract_id}] D[{device.device_number}]: {consumption_sum}"
@@ -1613,11 +1606,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     reading.consumption for reading in group_list
                 )
                 backstream_by_hour[key] = sum(
-                    reading.back_stream or 0 for reading in group_list
-                )
-
-            consumption_metadata = cast(
-                StatisticMetaData,
+                    reading.back_stream or 0 for reading in group_list)
+            consumption_metadata = StatisticMetaData(
                 {
                     "has_mean": False,
                     "has_sum": True,
@@ -1629,8 +1619,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 },
             )
 
-            cost_metadata = cast(
-                StatisticMetaData,
+            cost_metadata = StatisticMetaData(
                 {
                     "has_mean": False,
                     "has_sum": True,
@@ -1642,8 +1631,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 },
             )
 
-            production_metadata = cast(
-                StatisticMetaData,
+            production_metadata = StatisticMetaData(
                 {
                     "has_mean": False,
                     "has_sum": True,

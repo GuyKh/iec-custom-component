@@ -206,7 +206,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.data: dict[str, Any] | None = None
         self.client: IecClient | None = None
 
-    async def async_step_user(  # type: ignore
+    async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle the initial step."""
@@ -232,7 +232,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if not errors:
                 return await self.async_step_mfa()
 
-        return self.async_show_form(  # type: ignore
+        return self.async_show_form(
             step_id="user", data_schema=STEP_USER_DATA_SCHEMA, errors=errors
         )
 
@@ -241,7 +241,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> FlowResult:
         """Handle MFA step."""
         if not self.data or not self.data.get(CONF_USER_ID):
-            return self.async_show_form(  # type: ignore
+            return self.async_show_form(
                 step_id="user",
                 data_schema=STEP_USER_DATA_SCHEMA,
                 errors={"base": "invalid_auth"},
@@ -335,7 +335,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors["base"] = errors.get("base") or "cannot_connect"
             otp_type = "OTP"
 
-        return self.async_show_form(  # type: ignore
+        return self.async_show_form(
             step_id="mfa",
             data_schema=vol.Schema(schema),
             description_placeholders={"otp_type": otp_type},
@@ -345,7 +345,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @callback
     def _async_create_iec_entry(self, data: dict[str, Any]) -> FlowResult:
         """Create the config entry."""
-        return self.async_create_entry(  # type: ignore
+        return self.async_create_entry(
             title=f"IEC Account ({data[CONF_USER_ID]})",
             data=data,
         )
