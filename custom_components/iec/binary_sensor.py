@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 from homeassistant.components.binary_sensor import (
     BinarySensorEntityDescription,
@@ -36,7 +37,7 @@ _LOGGER = logging.getLogger(__name__)
 class IecBinaryEntityDescriptionMixin:
     """Mixin values for required keys."""
 
-    value_fn: Callable[dict, bool | None]
+    value_fn: Callable[[dict[Any, Any] | None], bool | None]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -52,7 +53,7 @@ BINARY_SENSORS: tuple[IecBinarySensorEntityDescription, ...] = (
         translation_key="last_iec_invoice_paid",
         value_fn=lambda data: (
             (data[INVOICE_DICT_NAME].amount_to_pay == 0)
-            if (data[INVOICE_DICT_NAME] != EMPTY_INVOICE)
+            if (data and data.get(INVOICE_DICT_NAME) != EMPTY_INVOICE)
             else None
         ),
     ),
@@ -124,13 +125,13 @@ class IecBinarySensorEntity(IecEntity, BinarySensorEntity):
         self.entity_description = entity_description
         self._attr_unique_id = f"{str(contract_id)}_{entity_description.key}"
 
-        attributes = {"contract_id": contract_id}
+        attributes: dict[str, Any] = {"contract_id": contract_id}
 
         if attributes_to_add:
             attributes.update(attributes_to_add)
 
         if is_multi_contract:
-            attributes["is_multi_contract"] = is_multi_contract
+            attributes["is_multi_contract"] = True
             self._attr_translation_placeholders = {
                 "multi_contract": f" of {contract_id}"
             }
