@@ -41,7 +41,6 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_API_TOKEN, UnitOfEnergy
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed
-from homeassistant.util.unit_conversion import EnergyConverter
 from homeassistant.helpers import aiohttp_client
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from iec_api.iec_client import IecClient
@@ -1639,7 +1638,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 "has_mean": False,
                 "has_sum": True,
                 "mean_type": StatisticMeanType.NONE,  # type: ignore[typeddict-item]
-                "unit_class": EnergyConverter,  # type: ignore[typeddict-item]
+                "unit_class": "energy",
                 "name": f"IEC Meter {device.device_number} Consumption",
                 "source": DOMAIN,
                 "statistic_id": consumption_statistic_id,
@@ -1661,7 +1660,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 "has_mean": False,
                 "has_sum": True,
                 "mean_type": StatisticMeanType.NONE,  # type: ignore[typeddict-item]
-                "unit_class": EnergyConverter,  # type: ignore[typeddict-item]
+                "unit_class": "energy",
                 "name": f"IEC Meter {device.device_number} Production",
                 "source": DOMAIN,
                 "statistic_id": production_statistic_id,
