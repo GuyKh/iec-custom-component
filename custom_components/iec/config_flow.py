@@ -36,6 +36,7 @@ from .const import (
     CONF_SELECTED_CONTRACTS,
     CONF_TOTP_SECRET,
     CONF_USER_ID,
+    CONF_OTP_METHOD,
     DOMAIN,
 )
 
@@ -45,6 +46,7 @@ CONTRACT_OPTIONS_KEY = "available_contract_options"
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_USER_ID): str,
+        vol.Required(CONF_OTP_METHOD, default="sms"): vol.In({"sms": "SMS", "email": "Email"}),
     }
 )
 
@@ -333,7 +335,8 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         schema[vol.Required(CONF_TOTP_SECRET)] = str
         try:
-            otp_type = await client.login_with_id()
+            prefer_sms = self.data.get(CONF_OTP_METHOD, "sms") == "sms"
+            otp_type = await client.login_with_id(prefer_sms=prefer_sms)
         except asyncio.CancelledError:
             errors["base"] = errors.get("base") or "cannot_connect"
             otp_type = "OTP"
@@ -428,11 +431,42 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         assert self.reauth_entry
         errors: dict[str, str] = {}
 
+        if user_input is not None:
+            self.reauth_data = {**self.reauth_entry.data, **user_input}
+            return await self.async_step_reauth_mfa()
+
+        schema = {
+            vol.Required(CONF_USER_ID, default=self.reauth_entry.data.get(CONF_USER_ID)): str,
+            vol.Required(
+                CONF_OTP_METHOD,
+                default=self.reauth_entry.data.get(CONF_OTP_METHOD, "sms")
+            ): vol.In({"sms": "SMS", "email": "Email"}),
+        }
+
+        return self.async_show_form(  # type: ignore
+            step_id="reauth_confirm",
+            data_schema=vol.Schema(schema),
+            errors=errors,
+        )
+
+    async def async_step_reauth_mfa(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Handle MFA step during reauth."""
+        assert self.reauth_entry
+        assert hasattr(self, "reauth_data")
+        errors: dict[str, str] = {}
+
+        if not self.client:
+            self.client = IecClient(
+                self.reauth_data[CONF_USER_ID],
+                async_create_clientsession(self.hass),
+            )
         client = self.client
 
-        if user_input is not None and user_input[CONF_TOTP_SECRET] is not None:
+        if user_input is not None and user_input.get(CONF_TOTP_SECRET) is not None:
             assert client is not None
-            data = {**self.reauth_entry.data, **user_input}
+            data = {**self.reauth_data, **user_input}
             errors = await _validate_login(self.hass, data, client)
             if not errors:
                 data[CONF_API_TOKEN] = client.get_token().to_dict()
@@ -446,16 +480,9 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 await self.hass.config_entries.async_reload(self.reauth_entry.entry_id)
                 return self.async_abort(reason="reauth_successful")  # type: ignore
 
-        if not client:
-            assert self.reauth_entry is not None
-            self.client = IecClient(
-                self.reauth_entry.data[CONF_USER_ID],
-                async_create_clientsession(self.hass),
-            )
-            client = self.client
-
         try:
-            otp_type = await client.login_with_id()
+            prefer_sms = self.reauth_data.get(CONF_OTP_METHOD, "sms") == "sms"
+            otp_type = await client.login_with_id(prefer_sms=prefer_sms)
         except asyncio.CancelledError:
             errors["base"] = errors.get("base") or "cannot_connect"
             otp_type = "OTP"
@@ -468,12 +495,11 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             otp_type = "OTP"
 
         schema = {
-            vol.Required(CONF_USER_ID): self.reauth_entry.data[CONF_USER_ID],
             vol.Required(CONF_TOTP_SECRET): str,
         }
 
         return self.async_show_form(  # type: ignore
-            step_id="reauth_confirm",
+            step_id="reauth_mfa",
             description_placeholders={"otp_type": otp_type},
             data_schema=vol.Schema(schema),
             errors=errors,

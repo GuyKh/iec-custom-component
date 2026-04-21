@@ -88,9 +88,10 @@
         "step": {
             "user": {
                 "title": "Account ID",
-                "description": "Enter your User ID (תעודת זהות)",
+                "description": "Enter your User ID (תעודת זהות) and preferred OTP method",
                 "data": {
-                    "user_id": "User ID"
+                    "user_id": "User ID",
+                    "otp_method": "OTP Method"
                 }
             },
             "mfa": {
@@ -106,9 +107,16 @@
             },
             "reauth_confirm": {
                 "title": "[%key:common::config_flow::title::reauth%]",
-                "description": "Enter your One Time Password (OTP) send to your {otp_type}",
+                "description": "Confirm your User ID and select preferred OTP method",
                 "data": {
                     "user_id": "User ID",
+                    "otp_method": "OTP Method"
+                }
+            },
+            "reauth_mfa": {
+                "title": "OTP",
+                "description": "Enter your One Time Password (OTP) sent to your {otp_type}",
+                "data": {
                     "totp_secret": "e.g. 123456"
                 }
             }

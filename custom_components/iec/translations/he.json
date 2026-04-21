@@ -88,9 +88,10 @@
         "step": {
             "user": {
                 "title": "מזהה לקוח חברת החשמל",
-                "description": "הכניסו את מזהה הלקוח (תעודת זהות)",
+                "description": "הכניסו את מזהה הלקוח (תעודת זהות) ואת שיטת קבלת הקוד החד-פעמי",
                 "data": {
-                    "user_id": "מזהה הלקוח (תעודת זהות)"
+                    "user_id": "מזהה הלקוח (תעודת זהות)",
+                    "otp_method": "שיטת קבלת OTP"
                 }
             },
             "mfa": {
@@ -106,9 +107,16 @@
             },
             "reauth_confirm": {
                 "title": "[%key:common::config_flow::title::reauth%]",
-                "description": "הכניסו את הקוד החד-פעמי שנשלח אליכם (OTP) שנשלח ל-{otp_type}",
+                "description": "אשרו את תעודת הזהות ובחרו את שיטת קבלת הקוד החד-פעמי",
                 "data": {
                     "user_id": "מזהה לקוח",
+                    "otp_method": "שיטת קבלת OTP"
+                }
+            },
+            "reauth_mfa": {
+                "title": "OTP",
+                "description": "הכניסו את הקוד החד-פעמי שנשלח אליכם (OTP) שנשלח ל-{otp_type}",
+                "data": {
                     "totp_secret": "לדוג' 123456"
                 }
             }
