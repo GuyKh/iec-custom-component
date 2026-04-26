@@ -1111,6 +1111,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                         f"Fetching {reading_type.name} readings from {reading_date}"
                     )
                     # Use invoice-based date for MONTHLY readings, otherwise use computed date
+                    # But don't override when we specifically want current month data (first of current month)
                     assert reading_date is not None
                     actual_reading_date = datetime.combine(reading_date, time.min)
                     actual_last_invoice_date = None
@@ -1118,6 +1119,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                         reading_type == ReadingResolution.MONTHLY
                         and from_date
                         and last_invoice_date
+                        and reading_date != localized_first_of_month.date()
                     ):
                         actual_reading_date = from_date
                         actual_last_invoice_date = last_invoice_date
