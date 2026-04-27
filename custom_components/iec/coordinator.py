@@ -59,7 +59,7 @@ from iec_api.models.remote_reading import (
     RemoteReadingResponse,
 )
 
-from .commons import find_reading_by_date, localize_datetime
+from .commons import TIMEZONE, find_reading_by_date, localize_datetime
 from .const import (
     ACCESS_TOKEN_EXPIRATION_TIME,
     ACCESS_TOKEN_ISSUED_AT,
@@ -1636,6 +1636,66 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 backstream_by_hour[key] = sum(
                     reading.back_stream or 0 for reading in group_list
                 )
+
+            # Fallback: if DAILY produced no usable hourly stats for a fully past day
+            # (e.g. IEC's 15-minute granularity for that day is incomplete), synthesize
+            # 24 hourly entries from the MONTHLY daily aggregate so `last_stat` advances
+            # past the broken day on the next poll instead of looping forever.
+            if not readings_by_hour and last_stat_time:
+                attempted_local = from_date.astimezone(TIMEZONE)
+                if attempted_local.date() < localized_today.date():
+                    month_anchor = localize_datetime(
+                        datetime.combine(
+                            attempted_local.date().replace(day=1),
+                            datetime.min.time(),
+                        )
+                    )
+                    monthly = await self._get_readings(
+                        contract_id,
+                        device.device_number,
+                        device.device_code,
+                        month_anchor,
+                        ReadingResolution.MONTHLY,
+                        device.meter_kind,
+                    )
+                    daily_pc = next(
+                        (
+                            pc
+                            for pc in (
+                                monthly.meter_list[0].period_consumptions
+                                if monthly and monthly.meter_list
+                                else []
+                            )
+                            if pc.interval.astimezone(TIMEZONE).date()
+                            == attempted_local.date()
+                        ),
+                        None,
+                    )
+                    if daily_pc is not None:
+                        daily_kwh = daily_pc.consumption or 0.0
+                        daily_back = daily_pc.back_stream or 0.0
+                        base_dt = localize_datetime(
+                            datetime.combine(
+                                attempted_local.date(), datetime.min.time()
+                            )
+                        )
+                        for h in range(24):
+                            hour_key = base_dt + timedelta(hours=h)
+                            if hour_key <= last_stat_req_hour:
+                                continue
+                            readings_by_hour[hour_key] = daily_kwh / 24
+                            backstream_by_hour[hour_key] = daily_back / 24
+                        _LOGGER.debug(
+                            f"[IEC Statistics] DAILY for {attempted_local.date()} was "
+                            f"incomplete; synthesized 24 hourly entries from MONTHLY "
+                            f"aggregate ({daily_kwh:.3f} kWh)"
+                        )
+                    else:
+                        _LOGGER.debug(
+                            f"[IEC Statistics] No MONTHLY aggregate available for "
+                            f"{attempted_local.date()}; cannot advance past it"
+                        )
+
             consumption_metadata: StatisticMetaData = {
                 "has_mean": False,
                 "has_sum": True,
