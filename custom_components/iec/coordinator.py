@@ -1046,7 +1046,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     )
                 )
                 # Get the reading dates based on invoice data
-                last_invoice_date, from_date = self._get_invoice_reading_dates(
+                last_invoice_date, _ = self._get_invoice_reading_dates(
                     billing_invoices.invoices
                 )
                 # Keep the first invoice (most recent by full_date) for other uses
@@ -1057,7 +1057,6 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             else:
                 last_invoice = EMPTY_INVOICE
                 last_invoice_date = None
-                from_date = None
 
             future_consumption: dict[str, FutureConsumptionInfo | None] = {}
             daily_readings: dict[str, list[PeriodConsumption]] = {}
@@ -1110,17 +1109,11 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     _LOGGER.debug(
                         f"Fetching {reading_type.name} readings from {reading_date}"
                     )
-                    # Use invoice-based date for MONTHLY readings, otherwise use computed date
+                    # Always use computed date (first of current month) so daily_readings
+                    # covers the CURRENT period — sensors like this_month_consumption depend on it.
                     assert reading_date is not None
                     actual_reading_date = datetime.combine(reading_date, time.min)
                     actual_last_invoice_date = None
-                    if (
-                        reading_type == ReadingResolution.MONTHLY
-                        and from_date
-                        and last_invoice_date
-                    ):
-                        actual_reading_date = from_date
-                        actual_last_invoice_date = last_invoice_date
 
                     remote_reading = await self._get_readings(
                         contract_id,
