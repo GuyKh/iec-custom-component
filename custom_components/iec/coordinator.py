@@ -1577,7 +1577,6 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
             if not stats.get(cost_statistic_id):
                 _LOGGER.debug("[IEC Statistics] No recent cost data")
-                consumption_sum = stats[consumption_statistic_id][0]["sum"] or 0.0
                 cost_sum = consumption_sum * kwh_price
             else:
                 cost_sum = stats[cost_statistic_id][0]["sum"] or 0.0
