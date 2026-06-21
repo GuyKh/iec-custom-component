@@ -106,7 +106,7 @@
                 "description": "Select which contract to use"
             },
             "reauth_confirm": {
-                "title": "[%key:common::config_flow::title::reauth%]",
+                "title": "Reauthenticate integration",
                 "description": "Confirm your User ID and select preferred OTP method",
                 "data": {
                     "user_id": "User ID",
@@ -122,15 +122,15 @@
             }
         },
         "error": {
-            "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
-            "invalid_auth": "[%key:common::config_flow::error::invalid_auth%]",
+            "cannot_connect": "Failed to connect",
+            "invalid_auth": "Invalid authentication",
             "invalid_id": "Invalid Israeli ID",
             "no_contracts": "You should select at least one contract",
             "no_active_contracts": "No active contracts found"
         },
         "abort": {
-            "already_configured": "[%key:common::config_flow::abort::already_configured_service%]",
-            "reauth_successful": "[%key:common::config_flow::abort::reauth_successful%]"
+            "already_configured": "Service is already configured",
+            "reauth_successful": "Re-authentication was successful"
         }
     }
 }

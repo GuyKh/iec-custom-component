@@ -106,7 +106,7 @@
                 "description": "בחרו באיזה חשבון חוזה להשתמש"
             },
             "reauth_confirm": {
-                "title": "[%key:common::config_flow::title::reauth%]",
+                "title": "אימות מחדש",
                 "description": "אשרו את תעודת הזהות ובחרו את שיטת קבלת הקוד החד-פעמי",
                 "data": {
                     "user_id": "מזהה לקוח",
@@ -122,15 +122,15 @@
             }
         },
         "error": {
-            "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
-            "invalid_auth": "[%key:common::config_flow::error::invalid_auth%]",
+            "cannot_connect": "ההתחברות נכשלה",
+            "invalid_auth": "אימות לא חוקי",
             "invalid_id": "תעודת זהות לא תקנית",
             "no_contracts": "נא לבחור לפחות חוזה אחד",
             "no_active_contracts": "לא נמצאו חוזים פעילים"
         },
         "abort": {
-            "already_configured": "[%key:common::config_flow::abort::already_configured_service%]",
-            "reauth_successful": "[%key:common::config_flow::abort::reauth_successful%]"
+            "already_configured": "השירות כבר מוגדר",
+            "reauth_successful": "האימות מחדש הצליח"
         }
     }
 }
