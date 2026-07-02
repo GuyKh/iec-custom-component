@@ -3,7 +3,7 @@
 from __future__ import annotations
 import logging
 
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryAuthFailed
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 
@@ -23,8 +23,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = iec_coordinator
     try:
         await hass.data[DOMAIN][entry.entry_id].async_config_entry_first_refresh()
+    except ConfigEntryAuthFailed:
+        # Let auth failures propagate so HA triggers the reauth UI
+        raise
     except Exception as err:
-        # Log the error but don't fail the setup
+        # Log other errors but don't fail the setup
         _LOGGER.error("Failed to fetch initial data: %s", err)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
