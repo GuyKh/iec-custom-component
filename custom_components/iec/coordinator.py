@@ -1388,8 +1388,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                                 load_err.code,
                                 load_err,
                             )
-                            # Trigger reauth for auth failures
-                            self.config_entry.async_reauth()
+                            raise ConfigEntryAuthFailed from load_err
                         else:
                             delay = base_delay * (2**attempt)  # Exponential backoff: 5, 10, 20s
                             _LOGGER.warning(
@@ -1427,8 +1426,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                                 check_err.code,
                                 check_err,
                             )
-                            # Trigger reauth for auth failures
-                            self.config_entry.async_reauth()
+                            raise ConfigEntryAuthFailed from check_err
                         else:
                             delay = base_delay * (2**attempt)  # Exponential backoff: 5, 10, 20s
                             _LOGGER.warning(
@@ -1453,7 +1451,6 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 )
                 self._entry_data = new_data
         except IECError as err:
-            # Handle authentication errors that should trigger reauth flow
             if err.code in (400, 401):
                 _LOGGER.error(
                     "IEC API authentication failed with code %d: %s. "
@@ -1461,8 +1458,6 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     err.code,
                     err,
                 )
-                # Trigger reauth for auth failures
-                self.config_entry.async_reauth()
             raise ConfigEntryAuthFailed from err
 
         try:
