@@ -1385,19 +1385,33 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     await self.api.check_token()
                     break  # Success, exit retry loop
                 except IECError as check_err:
-                    if attempt == max_retries - 1:  # Last attempt
-                        _LOGGER.error(
-                            f"Token check failed after {max_retries} attempts: {check_err}"
-                        )
-                        raise  # Re-raise to be caught by outer exception handler
+                    if check_err.code == 400:
+                        # 400 errors indicate authentication issues (expired refresh token)
+                        # Retry a few times before triggering reauth flow
+                        if attempt == max_retries - 1:  # Last attempt
+                            _LOGGER.error(
+                                "Token check failed after %d attempts with 400 error: %s. "
+                                "Refresh token may be expired, triggering reauth.",
+                                max_retries,
+                                check_err,
+                            )
+                        else:
+                            delay = base_delay * (2**attempt)  # Exponential backoff: 5, 10, 20s
+                            _LOGGER.warning(
+                                "Token check attempt %d failed with 400 error: %s. "
+                                "Retrying in %d seconds before triggering reauth...",
+                                attempt + 1,
+                                check_err,
+                                delay,
+                            )
+                            await asyncio.sleep(delay)
                     else:
-                        delay = base_delay * (
-                            2**attempt
-                        )  # Exponential backoff: 5, 10, 20 seconds
-                        _LOGGER.warning(
-                            f"Token check attempt {attempt + 1} failed: {check_err}. Retrying in {delay} seconds..."
-                        )
-                        await asyncio.sleep(delay)
+                        # Non-400 errors don't retry (DNS issues, etc.)
+                        if attempt == max_retries - 1:
+                            _LOGGER.error(
+                                f"Token check failed after {max_retries} attempts: {check_err}"
+                            )
+                        raise  # Re-raise to be caught by outer exception handler
 
             new_token = self.api.get_token()
             if old_token != new_token:
