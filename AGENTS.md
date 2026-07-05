@@ -20,7 +20,7 @@ This is a Home Assistant custom component for the Israel Electric Corporation (I
 
 - **Python**: 3.13+
 - **Home Assistant**: 2025.10.2+
-- **iec-api**: 0.5.7 (Python client for IEC API)
+- **iec-api**: 0.5.15 (Python client for IEC API)
 - **Linting**: ruff (with Home Assistant rules)
 - **Type Checking**: mypy
 
