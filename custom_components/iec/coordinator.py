@@ -1365,7 +1365,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
     ) -> dict[str, dict[str, Any]]:
         """Fetch data from API endpoint."""
         # Add retry logic for token operations to handle transient DNS/resolution issues
-        max_retries = 3
+        max_retries = 2
         base_delay = 5  # Start with 5 seconds delay
 
         if self._first_load:
@@ -1379,7 +1379,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 except IECError as load_err:
                     if load_err.code in (400, 401):
                         # 400/401 errors indicate authentication issues (expired/invalid token)
-                        # Retry a few times before triggering reauth flow
+                        # Retry once before triggering reauth flow
                         if attempt == max_retries - 1:  # Last attempt
                             _LOGGER.error(
                                 "Token load failed after %d attempts with code %d: %s. "
@@ -1390,10 +1390,10 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                             )
                             raise ConfigEntryAuthFailed from load_err
                         else:
-                            delay = base_delay * (2**attempt)  # Exponential backoff: 5, 10, 20s
+                            delay = base_delay  # 5s delay before retry
                             _LOGGER.warning(
                                 "Token load attempt %d failed with code %d: %s. "
-                                "Retrying in %d seconds...",
+                                "Retrying once in %d seconds...",
                                 attempt + 1,
                                 load_err.code,
                                 load_err,
@@ -1417,7 +1417,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 except IECError as check_err:
                     if check_err.code in (400, 401):
                         # 400/401 errors indicate authentication issues (expired/invalid token)
-                        # Retry a few times before triggering reauth flow
+                        # Retry once before triggering reauth flow
                         if attempt == max_retries - 1:  # Last attempt
                             _LOGGER.error(
                                 "Token check failed after %d attempts with code %d: %s. "
@@ -1428,10 +1428,10 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                             )
                             raise ConfigEntryAuthFailed from check_err
                         else:
-                            delay = base_delay * (2**attempt)  # Exponential backoff: 5, 10, 20s
+                            delay = base_delay  # 5s delay before retry
                             _LOGGER.warning(
                                 "Token check attempt %d failed with code %d: %s. "
-                                "Retrying in %d seconds...",
+                                "Retrying once in %d seconds...",
                                 attempt + 1,
                                 check_err.code,
                                 check_err,
