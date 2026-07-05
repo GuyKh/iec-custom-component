@@ -32,6 +32,7 @@ except ImportError:
         ARITHMETIC = "arithmetic"
         CIRCULAR = "circular"
 
+
 from homeassistant.components.recorder.statistics import (
     async_add_external_statistics,
     get_last_statistics,
@@ -399,10 +400,20 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             try:
                 # Trim leading zeros from contract_id
                 contract_id_normalized = str(int(contract_id))
-                device_in_response = await self.api.get_device_in(
-                    contract_id_normalized
-                )
-                devices = device_in_response.devices if device_in_response else []
+                api_devices = await self.api.get_devices(contract_id_normalized)
+                if api_devices:
+                    devices = [
+                        DeviceInDevice(
+                            is_active=device.is_active,
+                            device_type=device.device_type or 0,
+                            device_number=device.device_number or "",
+                            device_code=device.device_code or "",
+                            meter_kind="Consumption",
+                        )
+                        for device in api_devices
+                    ]
+                else:
+                    devices = []
                 self._devices_by_contract_id[contract_id] = devices
             except IECError as e:
                 _LOGGER.exception(
