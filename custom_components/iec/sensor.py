@@ -460,6 +460,10 @@ async def async_setup_entry(
     coordinator: IecApiCoordinator = hass.data[DOMAIN][entry.entry_id]
     entities: list[SensorEntity] = []
 
+    if coordinator.data is None:
+        _LOGGER.error("Coordinator has no data - skipping sensor setup. Reauth may be needed.")
+        return
+
     is_multi_contract = (
         len(
             list(

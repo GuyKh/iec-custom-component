@@ -1364,11 +1364,45 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         self,
     ) -> dict[str, dict[str, Any]]:
         """Fetch data from API endpoint."""
+        # Add retry logic for token operations to handle transient DNS/resolution issues
+        max_retries = 2
+        base_delay = 5  # Start with 5 seconds delay
+
         if self._first_load:
             _LOGGER.debug("Loading API token from config entry")
-            await self.api.load_jwt_token(
-                JWT.from_dict(self._entry_data[CONF_API_TOKEN])
-            )
+            for attempt in range(max_retries):
+                try:
+                    await self.api.load_jwt_token(
+                        JWT.from_dict(self._entry_data[CONF_API_TOKEN])
+                    )
+                    break  # Success, exit retry loop
+                except IECError as load_err:
+                    if load_err.code in (400, 401):
+                        # 400/401 errors indicate authentication issues (expired/invalid token)
+                        # Retry once before triggering reauth flow
+                        if attempt == max_retries - 1:  # Last attempt
+                            _LOGGER.error(
+                                "Token load failed after %d attempts with code %d: %s. "
+                                "Triggering reauth flow.",
+                                max_retries,
+                                load_err.code,
+                                load_err,
+                            )
+                            raise ConfigEntryAuthFailed from load_err
+                        else:
+                            delay = base_delay  # 5s delay before retry
+                            _LOGGER.warning(
+                                "Token load attempt %d failed with code %d: %s. "
+                                "Retrying once in %d seconds...",
+                                attempt + 1,
+                                load_err.code,
+                                load_err,
+                                delay,
+                            )
+                            await asyncio.sleep(delay)
+                    else:
+                        # Non-auth errors don't retry
+                        raise
 
         self._first_load = False
         try:
@@ -1376,28 +1410,37 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             # First thing first, check the token and refresh if needed.
             old_token = self.api.get_token()
 
-            # Add retry logic for token refresh to handle transient DNS/resolution issues
-            max_retries = 3
-            base_delay = 5  # Start with 5 seconds delay
-
             for attempt in range(max_retries):
                 try:
                     await self.api.check_token()
                     break  # Success, exit retry loop
                 except IECError as check_err:
-                    if attempt == max_retries - 1:  # Last attempt
-                        _LOGGER.error(
-                            f"Token check failed after {max_retries} attempts: {check_err}"
-                        )
-                        raise  # Re-raise to be caught by outer exception handler
+                    if check_err.code in (400, 401):
+                        # 400/401 errors indicate authentication issues (expired/invalid token)
+                        # Retry once before triggering reauth flow
+                        if attempt == max_retries - 1:  # Last attempt
+                            _LOGGER.error(
+                                "Token check failed after %d attempts with code %d: %s. "
+                                "Triggering reauth flow.",
+                                max_retries,
+                                check_err.code,
+                                check_err,
+                            )
+                            raise ConfigEntryAuthFailed from check_err
+                        else:
+                            delay = base_delay  # 5s delay before retry
+                            _LOGGER.warning(
+                                "Token check attempt %d failed with code %d: %s. "
+                                "Retrying once in %d seconds...",
+                                attempt + 1,
+                                check_err.code,
+                                check_err,
+                                delay,
+                            )
+                            await asyncio.sleep(delay)
                     else:
-                        delay = base_delay * (
-                            2**attempt
-                        )  # Exponential backoff: 5, 10, 20 seconds
-                        _LOGGER.warning(
-                            f"Token check attempt {attempt + 1} failed: {check_err}. Retrying in {delay} seconds..."
-                        )
-                        await asyncio.sleep(delay)
+                        # Non-auth errors don't retry (DNS issues, etc.)
+                        raise
 
             new_token = self.api.get_token()
             if old_token != new_token:
@@ -1408,6 +1451,13 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 )
                 self._entry_data = new_data
         except IECError as err:
+            if err.code in (400, 401):
+                _LOGGER.error(
+                    "IEC API authentication failed with code %d: %s. "
+                    "Triggering reauth flow.",
+                    err.code,
+                    err,
+                )
             raise ConfigEntryAuthFailed from err
 
         try:
