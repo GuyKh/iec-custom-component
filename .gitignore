@@ -24,3 +24,5 @@ config/*
 .claude/
 .opencode/
 .codex/
+.planning/
+token-optimizer/
