@@ -359,8 +359,10 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         await self._load_contract_account_mapping()
         localized_today = datetime.now(TIMEZONE)
         localized_first_of_month = localized_today.replace(day=1)
-        kwh_tariff = await self._fetcher._get_kwh_tariff()
-        kva_tariff = await self._fetcher._get_kva_tariff()
+        kwh_tariff, kva_tariff = await asyncio.gather(
+            self._fetcher._get_kwh_tariff(),
+            self._fetcher._get_kva_tariff(),
+        )
 
         access_token = self.api.get_token().access_token
         decoded_token = jwt.decode(access_token, options={"verify_signature": False})
@@ -386,6 +388,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         _LOGGER.debug(f"All Contract Ids: {list(contracts.keys())}")
 
         stat_tasks: list[asyncio.Task] = []
+
+        assert self.config_entry is not None
 
         for contract_id in self._contract_ids:
             contract = contracts.get(contract_id)
