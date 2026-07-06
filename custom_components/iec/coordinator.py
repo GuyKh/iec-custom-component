@@ -389,6 +389,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
         stat_tasks: list[asyncio.Task] = []
 
+        assert self.config_entry is not None
+
         for contract_id in self._contract_ids:
             contract = contracts.get(contract_id)
             if not contract:
