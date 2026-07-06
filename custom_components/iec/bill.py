@@ -120,7 +120,7 @@ def _parse_invoice_last_date(last_date: str | date) -> date | None:
         if len(parts) == 3:
             day, month, year = int(parts[0]), int(parts[1]), int(parts[2])
             return date(year, month, day)
-    except (ValueError, IndexError, TypeError):
+    except (ValueError, IndexError, TypeError, AttributeError):
         pass
     return None
 
