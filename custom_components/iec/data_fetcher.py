@@ -6,6 +6,7 @@ IEC API endpoints. Cache policies:
 - TTL-based caches expire after a configurable duration (default 24h).
 """
 
+import asyncio
 import logging
 import socket
 import time as time_module
@@ -78,6 +79,12 @@ class IecDataFetcher:
         self._api_session = aiohttp_client.async_get_clientsession(
             hass, family=socket.AF_INET
         )
+        self._api_semaphore = asyncio.Semaphore(3)
+
+    async def _api_call(self, coro):
+        """Execute an API call with concurrency limiting via semaphore."""
+        async with self._api_semaphore:
+            return await coro
 
     @staticmethod
     def _ttl_cache_get(
@@ -103,8 +110,8 @@ class IecDataFetcher:
         if devices is _MISSING:
             try:
                 contract_id_normalized = str(int(contract_id))
-                api_devices: list[Device] | None = await self.api.get_devices(
-                    contract_id_normalized
+                api_devices: list[Device] | None = await self._api_call(
+                    self.api.get_devices(contract_id_normalized)
                 )
                 devices = []
                 for device in api_devices or []:
@@ -139,7 +146,9 @@ class IecDataFetcher:
         devices = self._devices_by_meter_id.get(meter_id, _MISSING)
         if devices is _MISSING:
             try:
-                devices = await self.api.get_device_by_device_id(meter_id)
+                devices = await self._api_call(
+                    self.api.get_device_by_device_id(meter_id)
+                )
                 if devices:
                     self._devices_by_meter_id[meter_id] = devices
             except IECError:
@@ -156,8 +165,8 @@ class IecDataFetcher:
         last_meter_reading = self._last_meter_reading.get(key, _MISSING)
         if last_meter_reading is _MISSING:
             try:
-                meter_readings = await self.api.get_last_meter_reading(
-                    bp_number, str(contract_id)
+                meter_readings = await self._api_call(
+                    self.api.get_last_meter_reading(bp_number, str(contract_id))
                 )
 
                 if meter_readings and meter_readings.last_meters:
@@ -198,7 +207,7 @@ class IecDataFetcher:
         """Fetch kWh tariff with TTL caching and calculators fallback."""
         if self._kwh_tariff is _MISSING:
             try:
-                self._kwh_tariff = await self.api.get_kwh_tariff()
+                self._kwh_tariff = await self._api_call(self.api.get_kwh_tariff())
             except IECError:
                 _LOGGER.exception("Failed fetching kWh Tariff")
             except Exception:
@@ -224,7 +233,7 @@ class IecDataFetcher:
         """Fetch kVA tariff with TTL caching and calculators fallback."""
         if self._kva_tariff is _MISSING:
             try:
-                self._kva_tariff = await self.api.get_kva_tariff()
+                self._kva_tariff = await self._api_call(self.api.get_kva_tariff())
             except IECError:
                 _LOGGER.exception("Failed fetching KVA Tariff from IEC API")
             except Exception:
@@ -257,69 +266,73 @@ class IecDataFetcher:
         if self._cached_calculators_result is not _MISSING:
             return self._cached_calculators_result
 
-        session = aiohttp_client.async_get_clientsession(
-            self._hass, family=socket.AF_INET
-        )
-        kwh_tariff: float | None = None
-        kva_tariff: float | None = None
-
-        try:
-            async with session.get(
-                "https://iecapi.iec.co.il/api/content/he-IL/calculators/period",
-                timeout=ClientTimeout(total=30),
-            ) as resp:
-                if resp.status == 200:
-                    data = await resp.json(content_type=None)
-                    rates = data.get("period_Calculator_Rates") or {}
-                    kwh_val = rates.get("homeRate")
-                    kva_val = rates.get("kvaRate")
-                    if isinstance(kwh_val, (int, float)):
-                        kwh_tariff = float(kwh_val)
-                    if isinstance(kva_val, (int, float)):
-                        kva_tariff = float(kva_val)
-                    _LOGGER.debug(
-                        "Fetched fallback tariffs from calculators/period: "
-                        "homeRate=%s, kvaRate=%s",
-                        kwh_tariff,
-                        kva_tariff,
-                    )
-        except Exception as err:
-            _LOGGER.debug(
-                "Failed fetching fallback tariffs from calculators/period: %s", err
+        async with self._api_semaphore:
+            session = aiohttp_client.async_get_clientsession(
+                self._hass, family=socket.AF_INET
             )
+            kwh_tariff: float | None = None
+            kva_tariff: float | None = None
 
-        if kwh_tariff is None:
             try:
                 async with session.get(
-                    "https://iecapi.iec.co.il/api/content/he-IL/calculators/gadget",
+                    "https://iecapi.iec.co.il/api/content/he-IL/calculators/period",
                     timeout=ClientTimeout(total=30),
                 ) as resp:
                     if resp.status == 200:
                         data = await resp.json(content_type=None)
-                        rates = data.get("gadget_Calculator_Rates") or {}
+                        rates = data.get("period_Calculator_Rates") or {}
                         kwh_val = rates.get("homeRate")
+                        kva_val = rates.get("kvaRate")
                         if isinstance(kwh_val, (int, float)):
                             kwh_tariff = float(kwh_val)
+                        if isinstance(kva_val, (int, float)):
+                            kva_tariff = float(kva_val)
                         _LOGGER.debug(
-                            "Fetched fallback kWh tariff from calculators/gadget: "
-                            "homeRate=%s",
+                            "Fetched fallback tariffs from calculators/period: "
+                            "homeRate=%s, kvaRate=%s",
                             kwh_tariff,
+                            kva_tariff,
                         )
             except Exception as err:
                 _LOGGER.debug(
-                    "Failed fetching fallback kWh tariff from calculators/gadget: %s",
+                    "Failed fetching fallback tariffs from calculators/period: %s",
                     err,
                 )
 
-        self._cached_calculators_result = (kwh_tariff, kva_tariff)
-        return kwh_tariff, kva_tariff
+            if kwh_tariff is None:
+                try:
+                    async with session.get(
+                        "https://iecapi.iec.co.il/api/content/he-IL/calculators/gadget",
+                        timeout=ClientTimeout(total=30),
+                    ) as resp:
+                        if resp.status == 200:
+                            data = await resp.json(content_type=None)
+                            rates = data.get("gadget_Calculator_Rates") or {}
+                            kwh_val = rates.get("homeRate")
+                            if isinstance(kwh_val, (int, float)):
+                                kwh_tariff = float(kwh_val)
+                            _LOGGER.debug(
+                                "Fetched fallback kWh tariff from calculators/gadget: "
+                                "homeRate=%s",
+                                kwh_tariff,
+                            )
+                except Exception as err:
+                    _LOGGER.debug(
+                        "Failed fetching fallback kWh tariff from calculators/gadget: %s",
+                        err,
+                    )
+
+            self._cached_calculators_result = (kwh_tariff, kva_tariff)
+            return kwh_tariff, kva_tariff
 
     async def _get_delivery_tariff(self, phase) -> float:
         """Fetch delivery tariff by phase, cached per cycle."""
         delivery_tariff = self._delivery_tariff_by_phase.get(phase, _MISSING)
         if delivery_tariff is _MISSING:
             try:
-                delivery_tariff = await self.api.get_delivery_tariff(phase)
+                delivery_tariff = await self._api_call(
+                    self.api.get_delivery_tariff(phase)
+                )
                 self._delivery_tariff_by_phase[phase] = delivery_tariff
             except IECError:
                 _LOGGER.exception("Failed fetching Delivery Tariff by phase %s", phase)
@@ -331,7 +344,9 @@ class IecDataFetcher:
         distribution_tariff = self._distribution_tariff_by_phase.get(phase, _MISSING)
         if distribution_tariff is _MISSING:
             try:
-                distribution_tariff = await self.api.get_distribution_tariff(phase)
+                distribution_tariff = await self._api_call(
+                    self.api.get_distribution_tariff(phase)
+                )
                 self._distribution_tariff_by_phase[phase] = distribution_tariff
             except IECError:
                 _LOGGER.exception(
@@ -350,8 +365,10 @@ class IecDataFetcher:
             return connection_size
 
         try:
-            connection_size = await self.api.get_masa_connection_size_from_masa(
-                str(account_id) if account_id else None
+            connection_size = await self._api_call(
+                self.api.get_masa_connection_size_from_masa(
+                    str(account_id) if account_id else None
+                )
             )
             self._connection_size_by_account_id[account_id] = connection_size
         except IECError:
@@ -367,7 +384,9 @@ class IecDataFetcher:
         power_size = self._power_size_by_connection_size.get(connection_size, _MISSING)
         if power_size is _MISSING:
             try:
-                power_size = await self.api.get_power_size(connection_size)
+                power_size = await self._api_call(
+                    self.api.get_power_size(connection_size)
+                )
                 self._power_size_by_connection_size[connection_size] = power_size
             except IECError:
                 _LOGGER.exception(
@@ -411,14 +430,16 @@ class IecDataFetcher:
         reading = self._readings.get(key, _MISSING)
         if reading is _MISSING:
             try:
-                reading = await self.api.get_remote_reading(
-                    mapped_meter_kind,
-                    str(device_id),
-                    int(device_code),
-                    last_invoice_date if last_invoice_date else reading_date,
-                    reading_date,
-                    resolution,
-                    str(contract_id),
+                reading = await self._api_call(
+                    self.api.get_remote_reading(
+                        mapped_meter_kind,
+                        str(device_id),
+                        int(device_code),
+                        last_invoice_date if last_invoice_date else reading_date,
+                        reading_date,
+                        resolution,
+                        str(contract_id),
+                    )
                 )
                 if reading:
                     self._readings[key] = reading
