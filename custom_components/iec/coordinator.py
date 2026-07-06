@@ -3,25 +3,12 @@
 import asyncio
 import logging
 import socket
-import traceback
+
 from datetime import date, datetime, timedelta, time
 from typing import Any, Callable  # noqa: UP035
 from uuid import UUID
 
 import jwt
-
-try:
-    from homeassistant.components.recorder.models import StatisticMeanType
-except ImportError:
-    # Fallback for environments with older Home Assistant versions (<2025.10)
-    from enum import StrEnum
-
-    class StatisticMeanType(StrEnum):  # type: ignore[no-redef]
-        """Statistic mean type."""
-
-        NONE = "none"
-        ARITHMETIC = "arithmetic"
-        CIRCULAR = "circular"
 
 
 from homeassistant.config_entries import ConfigEntry
@@ -844,10 +831,9 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
         try:
             return await self._update_data()
-        except Exception as err:
-            _LOGGER.error("Failed updating data. Exception: %s", err)
-            _LOGGER.error(traceback.format_exc())
-            raise UpdateFailed("Failed Updating IEC data") from err
+        except Exception:
+            _LOGGER.exception("Failed updating IEC data")
+            raise UpdateFailed("Failed Updating IEC data")
 
     async def _estimate_bill(
         self,
