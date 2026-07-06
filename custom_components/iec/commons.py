@@ -13,10 +13,16 @@ TIMEZONE = ZoneInfo("Asia/Jerusalem")
 
 
 def localize_datetime(dt: datetime) -> datetime:
-    """Localize a datetime to the IEC timezone.
+    """Attach the IEC timezone to a naive datetime that is *already* in Asia/Jerusalem.
+
+    This is NOT a general-purpose localisation helper.  Use it only for datetimes
+    constructed from IEC API dates (e.g. ``datetime.combine(meter_start_date, ...)``)
+    where the calendar date is inherently Jerusalem-local.  For ``datetime.now()``
+    or ``datetime.fromtimestamp()`` use ``datetime.now(TIMEZONE)`` /
+    ``datetime.fromtimestamp(ts, tz=TIMEZONE)`` instead.
 
     Args:
-        dt: A naive datetime to localize.
+        dt: A naive datetime whose wall-clock value is already Asia/Jerusalem.
 
     Returns:
         A timezone-aware datetime in Asia/Jerusalem timezone.
