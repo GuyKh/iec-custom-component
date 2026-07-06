@@ -372,7 +372,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             },
         }
 
-        _LOGGER.debug(f"All Contract Ids: {list(contracts.keys())}")
+        _LOGGER.debug("All Contract Ids: %s", list(contracts.keys()))
 
         stat_tasks: list[asyncio.Task] = []
 
@@ -469,7 +469,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 devices = await self._fetcher._get_devices_by_contract_id(contract_id)
                 if not devices:
                     _LOGGER.debug(
-                        f"No devices for contract {contract_id}. Skipping creating devices."
+                        "No devices for contract %s. Skipping creating devices.",
+                        contract_id,
                     )
                     continue
 
@@ -497,7 +498,9 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                         reading_date = last_month_first_of_the_month.date()
 
                     _LOGGER.debug(
-                        f"Fetching {reading_type.name} readings from {reading_date}"
+                        "Fetching %s readings from %s",
+                        reading_type.name,
+                        reading_date,
                     )
                     # Use invoice-based date for MONTHLY readings, otherwise use computed date
                     # But don't override when we specifically want current month data (first of current month)
@@ -689,7 +692,9 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                             last_invoice,
                         )
                     except Exception as e:
-                        _LOGGER.warn("Failed to calculate estimated next bill", e)
+                        _LOGGER.warning(
+                            "Failed to calculate estimated next bill: %s", e
+                        )
                         estimated_bill = 0
                         consumption_price = 0
                         total_days = 0
@@ -879,7 +884,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     "Failed to fetch data from devices_by_id, falling back to Masa API",
                     e,
                 )
-                _LOGGER.debug(f"DevicesById Response: {devices_by_id}")
+                _LOGGER.debug("DevicesById Response: %s", devices_by_id)
                 last_meter_read = None
                 last_meter_read_date = None
                 phase_count = None
