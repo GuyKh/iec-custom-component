@@ -28,7 +28,7 @@ try:
 except ImportError:
     from enum import StrEnum
 
-    class StatisticMeanType(StrEnum):
+    class StatisticMeanType(StrEnum):  # type: ignore[no-redef]
         """Statistic mean type."""
 
         NONE = "none"
@@ -355,7 +355,7 @@ async def insert_statistics(
             "has_mean": False,
             "has_sum": True,
             "mean_type": StatisticMeanType.NONE,
-            "unit_class": EnergyConverter.UNIT_CLASS,
+            "unit_class": EnergyConverter.UNIT_CLASS,  # type: ignore[typeddict-unknown-key]
             "name": f"IEC Meter {device.device_number} Consumption",
             "source": DOMAIN,
             "statistic_id": consumption_statistic_id,
@@ -366,7 +366,7 @@ async def insert_statistics(
             "has_mean": False,
             "has_sum": True,
             "mean_type": StatisticMeanType.NONE,
-            "unit_class": None,
+            "unit_class": None,  # type: ignore[typeddict-unknown-key]
             "name": f"IEC Meter {device.device_number} Estimated Cost",
             "source": DOMAIN,
             "statistic_id": cost_statistic_id,
@@ -377,7 +377,7 @@ async def insert_statistics(
             "has_mean": False,
             "has_sum": True,
             "mean_type": StatisticMeanType.NONE,
-            "unit_class": EnergyConverter.UNIT_CLASS,
+            "unit_class": EnergyConverter.UNIT_CLASS,  # type: ignore[typeddict-unknown-key]
             "name": f"IEC Meter {device.device_number} Production",
             "source": DOMAIN,
             "statistic_id": production_statistic_id,

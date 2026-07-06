@@ -22,6 +22,7 @@ from homeassistant.helpers.typing import StateType
 from iec_api.models.invoice import Invoice
 from iec_api.models.remote_reading import PeriodConsumption
 
+from .bill import _parse_invoice_last_date
 from .commons import TIMEZONE, IecEntityType, find_reading_by_date
 from .const import (
     ACCESS_TOKEN_EXPIRATION_TIME,
@@ -416,7 +417,7 @@ ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         key="iec_bill_last_payment_date",
         device_class=SensorDeviceClass.DATE,
         value_fn=lambda data: (
-            IecApiCoordinator._parse_invoice_last_date(
+            _parse_invoice_last_date(
                 data[INVOICE_DICT_NAME].last_date
             )
             if (data[INVOICE_DICT_NAME] != EMPTY_INVOICE)
