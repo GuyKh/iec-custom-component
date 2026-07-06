@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import asyncio
 from collections import defaultdict
 from collections.abc import Mapping
 from typing import Any, TYPE_CHECKING
@@ -46,7 +45,9 @@ CONTRACT_OPTIONS_KEY = "available_contract_options"
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_USER_ID): str,
-        vol.Required(CONF_OTP_METHOD, default="sms"): vol.In({"sms": "SMS", "email": "Email"}),
+        vol.Required(CONF_OTP_METHOD, default="sms"): vol.In(
+            {"sms": "SMS", "email": "Email"}
+        ),
     }
 )
 
@@ -69,24 +70,18 @@ async def _validate_login(
         try:
             login_data[CONF_TOTP_SECRET] = normalized_otp_secret
             await api.verify_otp(normalized_otp_secret)
-        except asyncio.CancelledError:
-            return {"base": "cannot_connect"}
         except IECError:
             return {"base": "invalid_auth"}
 
     elif login_data.get(CONF_API_TOKEN):
         try:
             await api.load_jwt_token(JWT.from_dict(login_data[CONF_API_TOKEN]))
-        except asyncio.CancelledError:
-            return {"base": "cannot_connect"}
         except IECError:
             return {"base": "invalid_auth"}
 
     errors: dict[str, str] = {}
     try:
         await api.check_token()
-    except asyncio.CancelledError:
-        errors["base"] = "cannot_connect"
     except IECError:
         errors["base"] = "invalid_auth"
 
@@ -284,8 +279,6 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                 for contract_id in contract_ids_by_bp
                             }
                         )
-                    except asyncio.CancelledError:
-                        errors["base"] = "cannot_connect"
                     except IECError:
                         errors["base"] = "cannot_connect"
                     except Exception as err:  # noqa: BLE001
@@ -320,8 +313,6 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             data.pop(CONF_BP_NUMBER, None)
                             self.data = data
                             return await self.async_step_select_contracts()
-            except asyncio.CancelledError:
-                errors["base"] = "cannot_connect"
             except IECError:
                 errors["base"] = "cannot_connect"
             except Exception as err:  # noqa: BLE001
@@ -337,9 +328,6 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         try:
             prefer_sms = self.data.get(CONF_OTP_METHOD, "sms") == "sms"
             otp_type = await client.login_with_id(prefer_sms=prefer_sms)
-        except asyncio.CancelledError:
-            errors["base"] = errors.get("base") or "cannot_connect"
-            otp_type = "OTP"
         except IECError:
             errors["base"] = errors.get("base") or "cannot_connect"
             otp_type = "OTP"
@@ -436,10 +424,12 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return await self.async_step_reauth_mfa()
 
         schema = {
-            vol.Required(CONF_USER_ID, default=self.reauth_entry.data.get(CONF_USER_ID)): str,
+            vol.Required(
+                CONF_USER_ID, default=self.reauth_entry.data.get(CONF_USER_ID)
+            ): str,
             vol.Required(
                 CONF_OTP_METHOD,
-                default=self.reauth_entry.data.get(CONF_OTP_METHOD, "sms")
+                default=self.reauth_entry.data.get(CONF_OTP_METHOD, "sms"),
             ): vol.In({"sms": "SMS", "email": "Email"}),
         }
 
@@ -483,9 +473,6 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         try:
             prefer_sms = self.reauth_data.get(CONF_OTP_METHOD, "sms") == "sms"
             otp_type = await client.login_with_id(prefer_sms=prefer_sms)
-        except asyncio.CancelledError:
-            errors["base"] = errors.get("base") or "cannot_connect"
-            otp_type = "OTP"
         except IECError:
             errors["base"] = errors.get("base") or "cannot_connect"
             otp_type = "OTP"
