@@ -1,3 +1,0 @@
-debug_get_coordinator_data:
-  description: "Fetch and return the coordinator data for debugging purposes."
-  fields: {}
