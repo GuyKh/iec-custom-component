@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 from homeassistant.helpers.device_registry import DeviceInfo
 from iec_api.models.remote_reading import PeriodConsumption
 
-from custom_components.iec import DOMAIN
+from .const import DOMAIN
 
 TIMEZONE = ZoneInfo("Asia/Jerusalem")
 
