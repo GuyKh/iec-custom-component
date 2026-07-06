@@ -69,7 +69,9 @@ async def async_setup_entry(
     coordinator = hass.data[DOMAIN][entry.entry_id]
 
     if coordinator.data is None:
-        _LOGGER.error("Coordinator has no data - skipping binary sensor setup. Reauth may be needed.")
+        _LOGGER.error(
+            "Coordinator has no data - skipping binary sensor setup. Reauth may be needed."
+        )
         return
 
     is_multi_contract = (

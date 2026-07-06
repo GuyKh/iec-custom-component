@@ -5,8 +5,10 @@ import calendar
 import itertools
 import logging
 import socket
+import time as time_module
 import traceback
 from collections import Counter
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta, time
 from typing import Any, Callable  # noqa: UP035
 from uuid import UUID
@@ -100,6 +102,17 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+_MISSING: Any = object()
+_TTL_CACHE_DURATION = timedelta(hours=24)
+
+
+@dataclass
+class _TTLCacheEntry:
+    """A cache entry with timestamp for TTL-based invalidation."""
+
+    value: Any
+    fetched_at: float
+
 
 class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
     """Handle fetching IEC data, updating sensors and inserting statistics."""
@@ -141,8 +154,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         self._delivery_tariff_by_phase: dict[int, float] = {}
         self._distribution_tariff_by_phase: dict[int, float] = {}
         self._power_size_by_connection_size: dict[str, float] = {}
-        self._kwh_tariff: float | None = None
-        self._kva_tariff: float | None = None
+        self._kwh_tariff: float | Any = _MISSING
+        self._kva_tariff: float | Any = _MISSING
         self._readings: dict[tuple[int, int, int, str, str], RemoteReadingResponse] = {}
         self._default_account_id: UUID | None = None
         self._account_id_by_contract: dict[int, UUID] = {}
@@ -157,6 +170,9 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             session=self._api_session,
         )
         self._first_load: bool = True
+        self._cached_calculators_result: tuple[float | None, float | None] | Any = (
+            _MISSING
+        )
 
         @callback
         def _dummy_listener() -> None:
@@ -177,6 +193,22 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             self._dummy_listener_unsub = None
         await self.async_shutdown()
         _LOGGER.info("Coordinator unloaded successfully.")
+
+    @staticmethod
+    def _ttl_cache_get(
+        cache: dict, key: Any, ttl: timedelta = _TTL_CACHE_DURATION
+    ) -> Any:
+        """Get a value from a TTL cache if it exists and hasn't expired."""
+        entry = cache.get(key)
+        if entry is not None and isinstance(entry, _TTLCacheEntry):
+            if time_module.monotonic() - entry.fetched_at < ttl.total_seconds():
+                return entry.value
+        return _MISSING
+
+    @staticmethod
+    def _ttl_cache_set(cache: dict, key: Any, value: Any) -> None:
+        """Set a value in a TTL cache with the current timestamp."""
+        cache[key] = _TTLCacheEntry(value=value, fetched_at=time_module.monotonic())
 
     @staticmethod
     def _is_backstream_meter_kind(meter_kind: Any) -> bool:
@@ -319,8 +351,6 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 mapped_bp_number = self._normalize_bp_number(
                     customer_mobile.customer.bp_number
                 )
-        except asyncio.CancelledError:
-            return None
         except Exception as err:  # noqa: BLE001
             _LOGGER.debug(
                 "Failed resolving bp_number for contract %s via customer_mobile: %s",
@@ -346,11 +376,6 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     self._bp_number = customer.bp_number
                 else:
                     self._bp_number = None
-            except asyncio.CancelledError:
-                _LOGGER.warning(
-                    "Fetching customer was cancelled; using empty BP number and skipping contracts"
-                )
-                self._bp_number = None
             except IECError as e:
                 _LOGGER.exception("Failed fetching customer", e)
                 self._bp_number = None
@@ -370,11 +395,6 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 all_contracts.extend(contracts_for_bp)
                 for contract in contracts_for_bp:
                     self._set_contract_bp_mapping(int(contract.contract_id), bp_number)
-            except asyncio.CancelledError:
-                _LOGGER.warning(
-                    "Fetching contracts was cancelled for BP %s; continuing",
-                    bp_number,
-                )
             except IECError:
                 _LOGGER.exception("Failed fetching contracts for BP %s", bp_number)
 
@@ -395,8 +415,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
     async def _get_devices_by_contract_id(
         self, contract_id: int
     ) -> list[DeviceInDevice]:
-        devices = self._devices_by_contract_id.get(contract_id)
-        if not devices:
+        devices = self._devices_by_contract_id.get(contract_id, _MISSING)
+        if devices is _MISSING:
             try:
                 # Trim leading zeros from contract_id
                 contract_id_normalized = str(int(contract_id))
@@ -431,8 +451,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         return devices or []
 
     async def _get_devices_by_device_id(self, meter_id: str) -> Devices | None:
-        devices = self._devices_by_meter_id.get(meter_id)
-        if not devices:
+        devices = self._devices_by_meter_id.get(meter_id, _MISSING)
+        if devices is _MISSING:
             try:
                 devices = await self.api.get_device_by_device_id(meter_id)
                 if devices:
@@ -447,8 +467,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         self, bp_number: str, contract_id: int, meter_id: str | int
     ) -> MeterReading | None:
         key = (contract_id, int(meter_id))
-        last_meter_reading = self._last_meter_reading.get(key)
-        if not last_meter_reading:
+        last_meter_reading = self._last_meter_reading.get(key, _MISSING)
+        if last_meter_reading is _MISSING:
             try:
                 meter_readings = await self.api.get_last_meter_reading(
                     bp_number, str(contract_id)
@@ -485,21 +505,19 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         return self._last_meter_reading.get(key)
 
     async def _get_kwh_tariff(self) -> float:
-        if not self._kwh_tariff:
+        if self._kwh_tariff is _MISSING:
             try:
                 self._kwh_tariff = await self.api.get_kwh_tariff()
-            except asyncio.CancelledError:
-                _LOGGER.warning(
-                    "Fetching kWh tariff was cancelled; using 0.0 and continuing"
-                )
-                self._kwh_tariff = 0.0
-            except IECError as e:
-                _LOGGER.exception("Failed fetching kWh Tariff", e)
-            except Exception as e:
-                _LOGGER.exception("Unexpected error fetching kWh Tariff", e)
+            except IECError:
+                _LOGGER.exception("Failed fetching kWh Tariff")
+            except Exception:
+                _LOGGER.exception("Unexpected error fetching kWh Tariff")
 
-            # Fallback: try IEC calculators API when main call failed or returned 0.0
-            if not self._kwh_tariff or self._kwh_tariff == 0.0:
+            if (
+                self._kwh_tariff is _MISSING
+                or not self._kwh_tariff
+                or self._kwh_tariff == 0.0
+            ):
                 kwh_fallback, _ = await self._fetch_tariffs_from_calculators()
                 if kwh_fallback and kwh_fallback > 0:
                     _LOGGER.debug(
@@ -507,24 +525,24 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                         kwh_fallback,
                     )
                     self._kwh_tariff = kwh_fallback
+                elif self._kwh_tariff is _MISSING:
+                    self._kwh_tariff = 0.0
         return self._kwh_tariff or 0.0
 
     async def _get_kva_tariff(self) -> float:
-        if not self._kva_tariff:
+        if self._kva_tariff is _MISSING:
             try:
                 self._kva_tariff = await self.api.get_kva_tariff()
-            except asyncio.CancelledError:
-                _LOGGER.warning(
-                    "Fetching kVA tariff was cancelled; using 0.0 and continuing"
-                )
-                self._kva_tariff = 0.0
-            except IECError as e:
-                _LOGGER.exception("Failed fetching KVA Tariff from IEC API", e)
-            except Exception as e:
-                _LOGGER.exception("Unexpected error fetching KVA Tariff", e)
+            except IECError:
+                _LOGGER.exception("Failed fetching KVA Tariff from IEC API")
+            except Exception:
+                _LOGGER.exception("Unexpected error fetching KVA Tariff")
 
-            # Fallback: try IEC calculators API when main call failed or returned 0.0
-            if not self._kva_tariff or self._kva_tariff == 0.0:
+            if (
+                self._kva_tariff is _MISSING
+                or not self._kva_tariff
+                or self._kva_tariff == 0.0
+            ):
                 _, kva_fallback = await self._fetch_tariffs_from_calculators()
                 if kva_fallback and kva_fallback > 0:
                     _LOGGER.debug(
@@ -532,6 +550,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                         kva_fallback,
                     )
                     self._kva_tariff = kva_fallback
+                elif self._kva_tariff is _MISSING:
+                    self._kva_tariff = 0.0
         return self._kva_tariff or 0.0
 
     async def _fetch_tariffs_from_calculators(
@@ -540,7 +560,11 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         """Fetch tariffs from IEC calculators endpoints as a fallback.
 
         Returns: tuple of (kwh_home_rate, kva_rate), each may be None if not found.
+        Results are cached for the duration of one update cycle.
         """
+        if self._cached_calculators_result is not _MISSING:
+            return self._cached_calculators_result
+
         session = aiohttp_client.async_get_clientsession(
             self.hass, family=socket.AF_INET
         )
@@ -567,8 +591,6 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                         kwh_tariff,
                         kva_tariff,
                     )
-        except asyncio.CancelledError:
-            _LOGGER.debug("Fallback calculators/period fetch was cancelled")
         except Exception as err:  # noqa: BLE001
             _LOGGER.debug(
                 "Failed fetching fallback tariffs from calculators/period: %s", err
@@ -591,38 +613,37 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                             "Fetched fallback kWh tariff from calculators/gadget: homeRate=%s",
                             kwh_tariff,
                         )
-            except asyncio.CancelledError:
-                _LOGGER.debug("Fallback calculators/gadget fetch was cancelled")
             except Exception as err:  # noqa: BLE001
                 _LOGGER.debug(
                     "Failed fetching fallback kWh tariff from calculators/gadget: %s",
                     err,
                 )
 
+        self._cached_calculators_result = (kwh_tariff, kva_tariff)
         return kwh_tariff, kva_tariff
 
     async def _get_delivery_tariff(self, phase) -> float:
-        delivery_tariff = self._delivery_tariff_by_phase.get(phase)
-        if not delivery_tariff:
+        delivery_tariff = self._delivery_tariff_by_phase.get(phase, _MISSING)
+        if delivery_tariff is _MISSING:
             try:
                 delivery_tariff = await self.api.get_delivery_tariff(phase)
                 self._delivery_tariff_by_phase[phase] = delivery_tariff
-            except IECError as e:
-                _LOGGER.exception(
-                    f"Failed fetching Delivery Tariff by phase {phase}", e
-                )
+            except IECError:
+                _LOGGER.exception("Failed fetching Delivery Tariff by phase %s", phase)
+                delivery_tariff = 0.0
         return delivery_tariff or 0.0
 
     async def _get_distribution_tariff(self, phase) -> float:
-        distribution_tariff = self._distribution_tariff_by_phase.get(phase)
-        if not distribution_tariff:
+        distribution_tariff = self._distribution_tariff_by_phase.get(phase, _MISSING)
+        if distribution_tariff is _MISSING:
             try:
                 distribution_tariff = await self.api.get_distribution_tariff(phase)
                 self._distribution_tariff_by_phase[phase] = distribution_tariff
-            except IECError as e:
+            except IECError:
                 _LOGGER.exception(
-                    f"Failed fetching Distribution Tariff by phase {phase}", e
+                    "Failed fetching Distribution Tariff by phase %s", phase
                 )
+                distribution_tariff = 0.0
         return distribution_tariff or 0.0
 
     async def _load_contract_account_mapping(self) -> None:
@@ -679,35 +700,35 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         if not account_id:
             return None
 
-        connection_size = self._connection_size_by_account_id.get(account_id)
-        if connection_size:
+        connection_size = self._connection_size_by_account_id.get(account_id, _MISSING)
+        if connection_size is not _MISSING:
             return connection_size
 
         try:
             connection_size = await self.api.get_masa_connection_size_from_masa(
                 str(account_id) if account_id else None
             )
-            if connection_size:
-                self._connection_size_by_account_id[account_id] = connection_size
-        except IECError as e:
+            self._connection_size_by_account_id[account_id] = connection_size
+        except IECError:
             _LOGGER.exception(
-                "Failed fetching Masa Connection Size for account %s", account_id, e
+                "Failed fetching Masa Connection Size for account %s", account_id
             )
             return None
 
         return connection_size
 
     async def _get_power_size(self, connection_size) -> float:
-        power_size = self._power_size_by_connection_size.get(connection_size)
-        if not power_size:
+        power_size = self._power_size_by_connection_size.get(connection_size, _MISSING)
+        if power_size is _MISSING:
             try:
                 power_size = await self.api.get_power_size(connection_size)
                 self._power_size_by_connection_size[connection_size] = power_size
-            except IECError as e:
+            except IECError:
                 _LOGGER.exception(
-                    f"Failed fetching Power Size by Connection Size {connection_size}",
-                    e,
+                    "Failed fetching Power Size by Connection Size %s",
+                    connection_size,
                 )
+                power_size = 0.0
         return power_size or 0.0
 
     async def _get_readings(
@@ -740,8 +761,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             mapped_meter_kind,
             date_key,
         )
-        reading = self._readings.get(key)
-        if not reading:
+        reading = self._readings.get(key, _MISSING)
+        if reading is _MISSING:
             try:
                 reading = await self.api.get_remote_reading(
                     mapped_meter_kind,
@@ -985,7 +1006,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
     ) -> dict[str, dict[str, Any]]:
         contracts: dict[int, Contract] = await self._load_selected_contracts()
         await self._load_contract_account_mapping()
-        localized_today = localize_datetime(datetime.now())
+        localized_today = datetime.now(TIMEZONE)
         localized_first_of_month = localized_today.replace(day=1)
         kwh_tariff = await self._get_kwh_tariff()
         kva_tariff = await self._get_kva_tariff()
@@ -1011,9 +1032,9 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             },
         }
 
-        estimated_bill_dict = None
-
         _LOGGER.debug(f"All Contract Ids: {list(contracts.keys())}")
+
+        stat_tasks: list[asyncio.Task] = []
 
         for contract_id in self._contract_ids:
             contract = contracts.get(contract_id)
@@ -1029,8 +1050,12 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             )
             # Because IEC API provides historical usage/cost with a delay of a couple of days
             # we need to insert data into statistics.
-            self.hass.async_create_task(
-                self._insert_statistics(contract_id, contract.smart_meter)
+            stat_tasks.append(
+                self.config_entry.async_create_background_task(
+                    self.hass,
+                    self._insert_statistics(contract_id, contract.smart_meter),
+                    name=f"iec_stats_{contract_id}",
+                )
             )
 
             if not bp_number_for_contract:
@@ -1044,11 +1069,6 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     billing_invoices = await self.api.get_billing_invoices(
                         bp_number_for_contract, str(contract_id)
                     )
-                except asyncio.CancelledError:
-                    _LOGGER.warning(
-                        "Fetching invoices was cancelled; continuing without invoices"
-                    )
-                    billing_invoices = None
                 except IECError as e:
                     _LOGGER.exception("Failed fetching invoices", e)
                     billing_invoices = None
@@ -1083,6 +1103,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             backstream_meters: dict[str, bool] = {}
             backstream_totals: dict[str, dict[str, float | None]] = {}
 
+            estimated_bill_dict = None
             is_smart_meter = contract.smart_meter
             is_private_producer = contract.from_private_producer
             attributes_to_add = {
@@ -1352,11 +1373,18 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 ESTIMATED_BILL_DICT_NAME: estimated_bill_dict,
             }
 
-        # Clean up for next cycle
+        # Wait for all statistics insertion tasks to complete before cleaning up shared state
+        if stat_tasks:
+            await asyncio.gather(*stat_tasks, return_exceptions=True)
+
+        # Clean up per-cycle caches for next cycle
         self._today_readings = {}
         self._devices_by_contract_id = {}
-        self._kwh_tariff = None
         self._readings = {}
+        self._last_meter_reading = {}
+        self._kwh_tariff = _MISSING
+        self._kva_tariff = _MISSING
+        self._cached_calculators_result = _MISSING
 
         return data
 
@@ -1462,13 +1490,6 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
         try:
             return await self._update_data()
-        except asyncio.CancelledError as err:
-            _LOGGER.warning(
-                "Data update was cancelled (network timeout/cancelled); will retry later: %s",
-                err,
-            )
-            # Return empty data so setup doesn't fail; periodic refresh will try again
-            return {}
         except Exception as err:
             _LOGGER.error("Failed updating data. Exception: %s", err)
             _LOGGER.error(traceback.format_exc())
@@ -1487,7 +1508,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         )
         devices = await self._get_devices_by_contract_id(contract_id)
         kwh_price = await self._get_kwh_tariff()
-        localized_today = localize_datetime(datetime.now())
+        localized_today = datetime.now(TIMEZONE)
 
         if not devices:
             _LOGGER.error(
@@ -1557,7 +1578,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             else:
                 last_stat_time = last_stat[consumption_statistic_id][0]["start"]
                 # API returns daily data, so need to increase the start date by 4 hrs to get the next day
-                from_date = localize_datetime(datetime.fromtimestamp(last_stat_time))
+                from_date = datetime.fromtimestamp(last_stat_time, tz=TIMEZONE)
                 _LOGGER.debug(
                     f"[IEC Statistics] Last statistics are from {from_date.strftime('%Y-%m-%d %H:%M:%S')}"
                 )
@@ -1610,7 +1631,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 continue
 
             last_stat_hour = (
-                localize_datetime(datetime.fromtimestamp(last_stat_time))
+                datetime.fromtimestamp(last_stat_time, tz=TIMEZONE)
                 if last_stat_time
                 else readings.meter_list[0].period_consumptions[0].interval
             )
@@ -1667,7 +1688,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 filter(
                     lambda reading: (
                         reading.interval
-                        >= localize_datetime(datetime.fromtimestamp(last_stat_time))
+                        >= datetime.fromtimestamp(last_stat_time, tz=TIMEZONE)
                     ),
                     readings.meter_list[0].period_consumptions,
                 )
@@ -1682,7 +1703,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             readings_by_hour: dict[datetime, float] = {}
             backstream_by_hour: dict[datetime, float] = {}
             if last_stat_req_hour and last_stat_req_hour.tzinfo is None:
-                last_stat_req_hour = localize_datetime(last_stat_req_hour)
+                last_stat_req_hour = last_stat_req_hour.replace(tzinfo=TIMEZONE)
 
             for key, group in grouped_new_readings_by_hour:
                 group_list = list(group)
@@ -1911,14 +1932,14 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     "Couldn't get Last Meter Read, WILL NOT calculate the usage part in estimated bill."
                 )
                 last_meter_read = None
-                last_meter_read_date = localize_datetime(datetime.now()).date()
+                last_meter_read_date = datetime.now(TIMEZONE).date()
                 last_invoice = EMPTY_INVOICE
             else:
                 last_meter_read = last_meter_reading.reading
                 last_meter_read_date = (
                     last_meter_reading.reading_date.date()
                     if last_meter_reading.reading_date
-                    else localize_datetime(datetime.now()).date()
+                    else datetime.now(TIMEZONE).date()
                 )
 
             account_id = await self._get_account_id(contract_id)
@@ -2003,7 +2024,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         consumption_price = round(future_consumption * kwh_tariff, 2)
         total_days = 0
 
-        today = localize_datetime(datetime.now())
+        today = datetime.now(TIMEZONE)
 
         if last_invoice != EMPTY_INVOICE:
             current_date = last_meter_read_date + timedelta(days=1)
