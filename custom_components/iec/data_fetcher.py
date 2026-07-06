@@ -293,7 +293,7 @@ class IecDataFetcher:
                             kwh_tariff,
                             kva_tariff,
                         )
-            except Exception as err:
+            except Exception as err:  # noqa: BLE001
                 _LOGGER.debug(
                     "Failed fetching fallback tariffs from calculators/period: %s",
                     err,
@@ -316,7 +316,7 @@ class IecDataFetcher:
                                 "homeRate=%s",
                                 kwh_tariff,
                             )
-                except Exception as err:
+                except Exception as err:  # noqa: BLE001
                     _LOGGER.debug(
                         "Failed fetching fallback kWh tariff from calculators/gadget: %s",
                         err,
