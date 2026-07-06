@@ -1050,6 +1050,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             )
             # Because IEC API provides historical usage/cost with a delay of a couple of days
             # we need to insert data into statistics.
+            assert self.config_entry is not None
             stat_tasks.append(
                 self.config_entry.async_create_background_task(
                     self.hass,
