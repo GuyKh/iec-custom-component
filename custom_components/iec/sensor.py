@@ -123,7 +123,8 @@ def _get_reading_by_date(
 
     except StopIteration:
         _LOGGER.info(
-            f"Couldn't find daily reading for date: {desired_date.strftime('%Y-%m-%d')}"
+            "Couldn't find daily reading for date: %s",
+            desired_date.strftime("%Y-%m-%d"),
         )
         return EMPTY_REMOTE_READING
 
