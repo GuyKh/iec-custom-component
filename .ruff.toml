@@ -40,6 +40,8 @@ lint.ignore = [
     "E731",  # do not assign a lambda expression, use a def
 ]
 
+lint.per-file-ignores = { "tests/*" = ["D100", "D101", "D102", "D103", "D104"] }
+
 [lint.flake8-pytest-style]
 fixture-parentheses = false
 
