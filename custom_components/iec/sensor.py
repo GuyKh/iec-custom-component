@@ -32,7 +32,6 @@ from .const import (
     BACKSTREAM_TOTALS_DICT_NAME,
     CONTRACT_DICT_NAME,
     DAILY_READINGS_DICT_NAME,
-    DOMAIN,
     EMPTY_INVOICE,
     EMPTY_REMOTE_READING,
     EST_BILL_CONSUMPTION_PRICE_ATTR_NAME,
@@ -457,7 +456,7 @@ async def async_setup_entry(
 ) -> None:
     """Set up the IEC sensor."""
 
-    coordinator: IecApiCoordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator: IecApiCoordinator = entry.runtime_data
     entities: list[SensorEntity] = []
 
     if coordinator.data is None:
