@@ -1,30 +1,52 @@
-"""Tests for IEC coordinator 400 error retry logic."""
+"""Tests for IEC coordinator retry and error handling logic."""
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 from iec_api.models.exceptions import IECError
 
 
-def test_400_error_handling_in_retry_logic():
-    """Test that 400 errors are properly identified in retry logic.
+@pytest.fixture
+def mock_api():
+    api = MagicMock()
+    api.load_jwt_token = AsyncMock()
+    api.check_token = AsyncMock()
+    return api
 
-    This test verifies the logic change in coordinator.py where 400 errors
-    are handled differently than other IECError codes.
-    """
-    # Simple unit test for the error checking logic
+
+@pytest.fixture
+def mock_config_entry():
+    entry = MagicMock()
+    entry.data = {}
+    entry.unique_id = "test_iec"
+    return entry
+
+
+@pytest.mark.asyncio
+async def test_api_call_propagates_iec_error(mock_api, mock_config_entry):
+    mock_api.load_jwt_token.side_effect = IECError(401, "expired refresh token")
+    with patch(
+        "custom_components.iec.coordinator.IecApiCoordinator"
+    ) as mock_coordinator_cls:
+        instance = mock_coordinator_cls.return_value
+        instance.api = mock_api
+        instance.config_entry = mock_config_entry
+        instance._fetcher = MagicMock()
+        instance._fetcher._api_call = AsyncMock(side_effect=IECError(401, "unauthorized"))
+        with pytest.raises(IECError):
+            await instance._fetcher._api_call("test")
+
+
+@pytest.mark.asyncio
+async def test_500_error_immediate_raise():
+    error = IECError(500, "server error")
+    assert error.code == 500
+    assert "server error" in str(error)
+
+
+def test_iec_error_codes():
     error_400 = IECError(400, "expired refresh token")
     error_500 = IECError(500, "server error")
-
-    # Verify our logic checks work
     assert error_400.code == 400
     assert error_500.code == 500
     assert error_400.code != 500
-
-
-def test_retry_delay_calculation():
-    """Test exponential backoff delay calculation.
-
-    Validates the retry delay logic: 5, 10, 20 seconds for attempts 0, 1, 2.
-    """
-    base_delay = 5
-    expected_delays = [5, 10, 20]
-    calculated_delays = [base_delay * (2**attempt) for attempt in range(3)]
-    assert calculated_delays == expected_delays

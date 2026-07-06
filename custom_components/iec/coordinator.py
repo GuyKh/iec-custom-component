@@ -689,7 +689,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                             kva_tariff,
                             last_invoice,
                         )
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001
                         _LOGGER.warning(
                             "Failed to calculate estimated next bill: %s", e
                         )
@@ -877,7 +877,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                         "Failed to get Last Device Meter Reading, trying another way..."
                     )
 
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 _LOGGER.warning(
                     "Failed to fetch data from devices_by_id, falling back to Masa API",
                     e,
