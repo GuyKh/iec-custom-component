@@ -22,7 +22,7 @@ from homeassistant.helpers.typing import StateType
 from iec_api.models.invoice import Invoice
 from iec_api.models.remote_reading import PeriodConsumption
 
-from .commons import TIMEZONE, IecEntityType, find_reading_by_date, localize_datetime
+from .commons import TIMEZONE, IecEntityType, find_reading_by_date
 from .const import (
     ACCESS_TOKEN_EXPIRATION_TIME,
     ACCESS_TOKEN_ISSUED_AT,
@@ -235,7 +235,7 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
                 data[DAILY_READINGS_DICT_NAME][
                     data[ATTRIBUTES_DICT_NAME][METER_ID_ATTR_NAME]
                 ],
-                localize_datetime(datetime.now()),
+                datetime.now(TIMEZONE),
             ).consumption
             if (
                 data[DAILY_READINGS_DICT_NAME]
@@ -256,7 +256,7 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
                     data[DAILY_READINGS_DICT_NAME][
                         data[ATTRIBUTES_DICT_NAME][METER_ID_ATTR_NAME]
                     ],
-                    localize_datetime(datetime.now()) - timedelta(days=1),
+                    datetime.now(TIMEZONE) - timedelta(days=1),
                 ).consumption
             )
             if (data[DAILY_READINGS_DICT_NAME])
@@ -277,8 +277,7 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
                         for reading in data[DAILY_READINGS_DICT_NAME][
                             data[ATTRIBUTES_DICT_NAME][METER_ID_ATTR_NAME]
                         ]
-                        if reading.interval.month
-                        == localize_datetime(datetime.now()).month
+                        if reading.interval.month == datetime.now(TIMEZONE).month
                     ]
                 )
             )
@@ -340,7 +339,7 @@ BACKSTREAM_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
                 data[DAILY_READINGS_DICT_NAME][
                     data[ATTRIBUTES_DICT_NAME][METER_ID_ATTR_NAME]
                 ],
-                localize_datetime(datetime.now()),
+                datetime.now(TIMEZONE),
             ).back_stream
             if _is_backstream_meter(data)
             else None
@@ -461,7 +460,9 @@ async def async_setup_entry(
     entities: list[SensorEntity] = []
 
     if coordinator.data is None:
-        _LOGGER.error("Coordinator has no data - skipping sensor setup. Reauth may be needed.")
+        _LOGGER.error(
+            "Coordinator has no data - skipping sensor setup. Reauth may be needed."
+        )
         return
 
     is_multi_contract = (
