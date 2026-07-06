@@ -7,7 +7,7 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_API_TOKEN
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import config_validation as cv
+from homeassistant.components.diagnostics import async_redact_data
 
 from .const import (
     CONF_BP_NUMBER,
@@ -32,8 +32,8 @@ async def async_get_config_entry_diagnostics(
     coordinator = entry.runtime_data
 
     data: dict[str, Any] = {
-        "entry": cv.async_redact_data(entry.data, TO_REDACT),
-        "coordinator_data": cv.async_redact_data(coordinator.data, TO_REDACT)
+        "entry": async_redact_data(entry.data, TO_REDACT),
+        "coordinator_data": async_redact_data(coordinator.data, TO_REDACT)
         if coordinator.data
         else None,
     }
