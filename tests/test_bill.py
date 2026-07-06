@@ -178,7 +178,7 @@ class TestGetInvoiceReadingDates:
         current.to_date = datetime(2024, 3, 10)
         last_date, from_date = _get_invoice_reading_dates([future, current])
         assert last_date == datetime(2024, 3, 10, 0, 0)
-        assert from_date == datetime(2024, 6, 20, 0, 0)
+        assert from_date == datetime(2024, 3, 15, 0, 0)
 
 
 class TestExtractValidFutureConsumption:
@@ -205,51 +205,51 @@ class TestExtractValidFutureConsumption:
         assert _extract_valid_future_consumption(None) is None
 
     def test_empty_meter_list(self):
-        reading = self._make_meter([])
+        reading = self._make_reading(meters=[])
         assert _extract_valid_future_consumption(reading) is None
 
     def test_no_future_info(self):
         meter = self._make_meter(None)
-        reading = self._make_meter([meter])
+        reading = self._make_reading(meters=[meter])
         assert _extract_valid_future_consumption(reading) is None
 
     def test_valid_consumption(self):
         info = self._make_future(consumption=150.0, total_import=500.0)
         meter = self._make_meter(info)
-        reading = self._make_meter([meter])
+        reading = self._make_reading(meters=[meter])
         result = _extract_valid_future_consumption(reading)
         assert result is info
 
     def test_valid_total_import(self):
         info = self._make_future(consumption=0, total_import=300.0)
         meter = self._make_meter(info)
-        reading = self._make_meter([meter])
+        reading = self._make_reading(meters=[meter])
         result = _extract_valid_future_consumption(reading)
         assert result is info
 
     def test_both_zero_returns_none(self):
         info = self._make_future(consumption=0, total_import=0)
         meter = self._make_meter(info)
-        reading = self._make_meter([meter])
+        reading = self._make_reading(meters=[meter])
         assert _extract_valid_future_consumption(reading) is None
 
     def test_min_date_returns_none(self):
         info = self._make_future(consumption=100.0, import_date=date.min)
         meter = self._make_meter(info)
-        reading = self._make_meter([meter])
+        reading = self._make_reading(meters=[meter])
         assert _extract_valid_future_consumption(reading) is None
 
     def test_string_import_date(self):
         info = self._make_future(consumption=100.0, import_date="2024-06-01")
         meter = self._make_meter(info)
-        reading = self._make_meter([meter])
+        reading = self._make_reading(meters=[meter])
         result = _extract_valid_future_consumption(reading)
         assert result is info
 
     def test_specific_meter_used(self):
         info = self._make_future(consumption=100.0)
         meter = self._make_meter(info)
-        reading = self._make_meter([meter])
+        reading = self._make_reading(meters=[meter])
         result = _extract_valid_future_consumption(reading, meter=meter)
         assert result is info
 

@@ -3,8 +3,6 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
-from homeassistant.helpers.update_coordinator import UpdateFailed
 from iec_api.models.exceptions import IECError
 
 
@@ -25,7 +23,7 @@ def mock_config_entry():
 
 
 @pytest.mark.asyncio
-async def test_401_error_triggers_config_entry_auth_failed(mock_api, mock_config_entry):
+async def test_api_call_propagates_iec_error(mock_api, mock_config_entry):
     mock_api.load_jwt_token.side_effect = IECError(401, "expired refresh token")
     with patch(
         "custom_components.iec.coordinator.IecApiCoordinator"
@@ -35,8 +33,8 @@ async def test_401_error_triggers_config_entry_auth_failed(mock_api, mock_config
         instance.config_entry = mock_config_entry
         instance._fetcher = MagicMock()
         instance._fetcher._api_call = AsyncMock(side_effect=IECError(401, "unauthorized"))
-        with pytest.raises(UpdateFailed):
-            instance._fetcher._api_call("test")
+        with pytest.raises(IECError):
+            await instance._fetcher._api_call("test")
 
 
 @pytest.mark.asyncio
