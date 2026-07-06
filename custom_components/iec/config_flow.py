@@ -225,7 +225,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             #     }
             # )
 
-            _LOGGER.debug(f"User input in step_user: {user_input}")
+            _LOGGER.debug("User input in step_user: %s", user_input)
             self.data = user_input
             try:
                 self.client = IecClient(
@@ -233,7 +233,7 @@ class IecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
             except ValueError as err:
                 errors["base"] = "invalid_id"
-                _LOGGER.error(f"Error while creating IEC client: {err}")
+                _LOGGER.error("Error while creating IEC client: %s", err)
 
             if not errors:
                 return await self.async_step_mfa()
