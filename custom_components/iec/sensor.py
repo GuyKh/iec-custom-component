@@ -409,7 +409,10 @@ ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         device_class=SensorDeviceClass.DATE,
         value_fn=lambda data: (
             data[INVOICE_DICT_NAME].to_date.date()
-            if (data[INVOICE_DICT_NAME] != EMPTY_INVOICE)
+            if (
+                data[INVOICE_DICT_NAME] != EMPTY_INVOICE
+                and data[INVOICE_DICT_NAME].to_date is not None
+            )
             else None
         ),
     ),
