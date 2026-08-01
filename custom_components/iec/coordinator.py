@@ -849,11 +849,12 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 # Use the next invoice's toDate as fromDate, or today if no next invoice
                 if i + 1 < len(sorted_invoices):
                     to_date = sorted_invoices[i + 1].to_date
-                    from_date_obj = (
-                        to_date
-                        if isinstance(to_date, datetime)
-                        else datetime.combine(to_date, time.min)
-                    )
+                    if isinstance(to_date, datetime):
+                        from_date_obj = to_date
+                    elif to_date is not None:
+                        from_date_obj = datetime.combine(to_date, time.min)
+                    else:
+                        from_date_obj = datetime.combine(today, time.min)
                 else:
                     from_date_obj = datetime.combine(today, time.min)
                 break
