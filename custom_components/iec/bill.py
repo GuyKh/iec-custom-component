@@ -154,11 +154,15 @@ def _get_invoice_reading_dates(
             last_invoice_date_obj = datetime.combine(parsed_last_date, time.min)
             if i + 1 < len(sorted_invoices):
                 to_date = sorted_invoices[i + 1].to_date
-                from_date_obj = (
-                    to_date
-                    if isinstance(to_date, datetime)
-                    else datetime.combine(to_date, time.min)
-                )
+                if isinstance(to_date, datetime):
+                    from_date_obj = to_date
+                elif to_date is not None:
+                    # A plain date is combined with midnight, as before.
+                    from_date_obj = datetime.combine(to_date, time.min)
+                else:
+                    # The next invoice has no to_date (e.g. an open billing
+                    # period); fall back to today like the "no next invoice" case.
+                    from_date_obj = datetime.combine(today, time.min)
             else:
                 from_date_obj = datetime.combine(today, time.min)
             break

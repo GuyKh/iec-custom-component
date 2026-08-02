@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Any
 
-from aiohttp import ClientTimeout
+from aiohttp import ClientError, ClientTimeout
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import aiohttp_client
@@ -293,7 +293,16 @@ class IecDataFetcher:
                             kwh_tariff,
                             kva_tariff,
                         )
-            except Exception as err:  # noqa: BLE001
+            except (
+                ClientError,
+                TimeoutError,
+                ValueError,
+                AttributeError,
+                TypeError,
+            ) as err:
+                # Network failures (ClientError/TimeoutError), non-JSON responses
+                # (ValueError) and unexpected payload shapes (AttributeError/TypeError)
+                # are expected from this fallback endpoint; other exceptions surface.
                 _LOGGER.debug(
                     "Failed fetching fallback tariffs from calculators/period: %s",
                     err,
@@ -316,7 +325,14 @@ class IecDataFetcher:
                                 "homeRate=%s",
                                 kwh_tariff,
                             )
-                except Exception as err:  # noqa: BLE001
+                except (
+                    ClientError,
+                    TimeoutError,
+                    ValueError,
+                    AttributeError,
+                    TypeError,
+                ) as err:
+                    # Same tolerated failure modes as the /period endpoint above.
                     _LOGGER.debug(
                         "Failed fetching fallback kWh tariff from calculators/gadget: %s",
                         err,

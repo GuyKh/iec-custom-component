@@ -5,11 +5,12 @@ import logging
 import socket
 
 from datetime import date, datetime, timedelta, time
-from typing import Any, Callable  # noqa: UP035
+from typing import Any, Awaitable, Callable  # noqa: UP035
 from uuid import UUID
 
 import jwt
 
+from aiohttp import ClientError
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_API_TOKEN
@@ -228,7 +229,10 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 mapped_bp_number = self._normalize_bp_number(
                     customer_mobile.customer.bp_number
                 )
-        except Exception as err:  # noqa: BLE001
+        except (IECError, ClientError, TimeoutError, AttributeError, TypeError) as err:
+            # Auth/refresh failures (IECError), network issues (ClientError/TimeoutError)
+            # and malformed IEC payloads (AttributeError/TypeError) are tolerated here:
+            # bp_number resolution is best-effort with graceful fallbacks below.
             _LOGGER.debug(
                 "Failed resolving bp_number for contract %s via customer_mobile: %s",
                 contract_id,
@@ -296,7 +300,9 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
         try:
             user_profile = await self.api.get_masa_contact_account_user_profile()
-        except Exception as err:  # noqa: BLE001
+        except (IECError, ClientError, TimeoutError) as err:
+            # Auth/refresh failures (IECError) and network issues (ClientError/TimeoutError)
+            # are transient; skip account mapping this cycle instead of failing the update.
             _LOGGER.debug(
                 "Failed fetching Masa user profile for account mapping: %s", err
             )
@@ -690,8 +696,12 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                             last_invoice,
                         )
                     except Exception as e:  # noqa: BLE001
+                        # Deliberately broad: the bill estimate depends on third-party
+                        # payload shapes; log the traceback for diagnosis.
                         _LOGGER.warning(
-                            "Failed to calculate estimated next bill: %s", e
+                            "Failed to calculate estimated next bill: %s",
+                            e,
+                            exc_info=True,
                         )
                         estimated_bill = 0
                         consumption_price = 0
@@ -732,49 +742,66 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
         return data
 
+    async def _run_token_operation_with_retry(
+        self,
+        operation_name: str,
+        operation: Callable[[], Awaitable[Any]],
+    ) -> None:
+        """Run a token operation with a single retry for transient auth failures.
+
+        IECError codes 400/401 indicate authentication issues (expired/invalid
+        token): the operation is retried once after a short delay before the
+        reauth flow is triggered. Any other IECError is re-raised immediately,
+        since retrying is unlikely to help (DNS issues, server errors, etc.).
+        """
+        max_retries = 2
+        base_delay = 5  # Start with 5 seconds delay
+
+        for attempt in range(max_retries):
+            try:
+                await operation()
+                return  # Success, exit retry loop
+            except IECError as err:
+                if err.code in (400, 401):
+                    # 400/401 errors indicate authentication issues (expired/invalid token)
+                    # Retry once before triggering reauth flow
+                    if attempt == max_retries - 1:  # Last attempt
+                        _LOGGER.error(
+                            "Token %s failed after %d attempts with code %d: %s. "
+                            "Triggering reauth flow.",
+                            operation_name,
+                            max_retries,
+                            err.code,
+                            err,
+                        )
+                        raise ConfigEntryAuthFailed from err
+                    _LOGGER.warning(
+                        "Token %s attempt %d failed with code %d: %s. "
+                        "Retrying once in %d seconds...",
+                        operation_name,
+                        attempt + 1,
+                        err.code,
+                        err,
+                        base_delay,
+                    )
+                    await asyncio.sleep(base_delay)
+                else:
+                    # Non-auth errors don't retry (DNS issues, etc.)
+                    raise
+
     async def _async_update_data(
         self,
     ) -> dict[str, dict[str, Any]]:
         """Fetch data from API endpoint."""
         # Add retry logic for token operations to handle transient DNS/resolution issues
-        max_retries = 2
-        base_delay = 5  # Start with 5 seconds delay
-
         if self._first_load:
             _LOGGER.debug("Loading API token from config entry")
-            for attempt in range(max_retries):
-                try:
-                    await self.api.load_jwt_token(
-                        JWT.from_dict(self._entry_data[CONF_API_TOKEN])
-                    )
-                    break  # Success, exit retry loop
-                except IECError as load_err:
-                    if load_err.code in (400, 401):
-                        # 400/401 errors indicate authentication issues (expired/invalid token)
-                        # Retry once before triggering reauth flow
-                        if attempt == max_retries - 1:  # Last attempt
-                            _LOGGER.error(
-                                "Token load failed after %d attempts with code %d: %s. "
-                                "Triggering reauth flow.",
-                                max_retries,
-                                load_err.code,
-                                load_err,
-                            )
-                            raise ConfigEntryAuthFailed from load_err
-                        else:
-                            delay = base_delay  # 5s delay before retry
-                            _LOGGER.warning(
-                                "Token load attempt %d failed with code %d: %s. "
-                                "Retrying once in %d seconds...",
-                                attempt + 1,
-                                load_err.code,
-                                load_err,
-                                delay,
-                            )
-                            await asyncio.sleep(delay)
-                    else:
-                        # Non-auth errors don't retry
-                        raise
+            await self._run_token_operation_with_retry(
+                "load",
+                lambda: self.api.load_jwt_token(
+                    JWT.from_dict(self._entry_data[CONF_API_TOKEN])
+                ),
+            )
 
         self._first_load = False
         try:
@@ -782,37 +809,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             # First thing first, check the token and refresh if needed.
             old_token = self.api.get_token()
 
-            for attempt in range(max_retries):
-                try:
-                    await self.api.check_token()
-                    break  # Success, exit retry loop
-                except IECError as check_err:
-                    if check_err.code in (400, 401):
-                        # 400/401 errors indicate authentication issues (expired/invalid token)
-                        # Retry once before triggering reauth flow
-                        if attempt == max_retries - 1:  # Last attempt
-                            _LOGGER.error(
-                                "Token check failed after %d attempts with code %d: %s. "
-                                "Triggering reauth flow.",
-                                max_retries,
-                                check_err.code,
-                                check_err,
-                            )
-                            raise ConfigEntryAuthFailed from check_err
-                        else:
-                            delay = base_delay  # 5s delay before retry
-                            _LOGGER.warning(
-                                "Token check attempt %d failed with code %d: %s. "
-                                "Retrying once in %d seconds...",
-                                attempt + 1,
-                                check_err.code,
-                                check_err,
-                                delay,
-                            )
-                            await asyncio.sleep(delay)
-                    else:
-                        # Non-auth errors don't retry (DNS issues, etc.)
-                        raise
+            await self._run_token_operation_with_retry("check", self.api.check_token)
 
             new_token = self.api.get_token()
             if old_token != new_token:
@@ -877,10 +874,13 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                         "Failed to get Last Device Meter Reading, trying another way..."
                     )
 
-            except Exception as e:  # noqa: BLE001
+            except Exception:  # noqa: BLE001
+                # Deliberately broad: devices_by_id payloads vary by meter type.
+                # exc_info=True includes the traceback (previously the exception was
+                # passed as an unformatted arg, which itself raised TypeError).
                 _LOGGER.warning(
                     "Failed to fetch data from devices_by_id, falling back to Masa API",
-                    e,
+                    exc_info=True,
                 )
                 _LOGGER.debug("DevicesById Response: %s", devices_by_id)
                 last_meter_read = None
