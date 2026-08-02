@@ -8,16 +8,20 @@ on:
 
 jobs:
   pytest:
-    name: "Unit Tests"
+    name: "Unit Tests (Python ${{ matrix.python-version }})"
     runs-on: "ubuntu-latest"
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
     steps:
       - name: "Checkout the repository"
-        uses: "actions/checkout@v7.0.0"
+        uses: "actions/checkout@v7.0.1"
 
       - name: "Set up Python"
-        uses: actions/setup-python@v6.3.0
+        uses: "actions/setup-python@v7.0.0"
         with:
-          python-version: "3.14"
+          python-version: ${{ matrix.python-version }}
           cache: "pip"
 
       - name: "Install requirements"

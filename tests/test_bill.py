@@ -154,6 +154,12 @@ class TestParseInvoiceLastDate:
 
 
 class TestGetInvoiceReadingDates:
+    """Contract: the reading window derives from the most recent PAST invoice.
+
+    Invoices whose lastDate is in the future are ignored; the from_date is the
+    to_date of the next older invoice (or today when none exists).
+    """
+
     def test_empty_invoices(self):
         assert _get_invoice_reading_dates([]) == (None, None)
 
@@ -179,6 +185,60 @@ class TestGetInvoiceReadingDates:
         last_date, from_date = _get_invoice_reading_dates([future, current])
         assert last_date == datetime(2024, 3, 10, 0, 0)
         assert from_date == datetime(2024, 3, 15, 0, 0)
+
+    @freeze_time("2024-06-15")
+    def test_only_future_invoices_return_none(self):
+        """Contract: invoices entirely in the future yield no reading window."""
+        future1 = MagicMock()
+        future1.last_date = "20/06/2024"
+        future2 = MagicMock()
+        future2.last_date = "25/06/2024"
+        assert _get_invoice_reading_dates([future1, future2]) == (None, None)
+
+    @freeze_time("2024-06-15")
+    def test_only_past_invoices_uses_most_recent(self):
+        """Contract: the most recent past invoice sets the window start."""
+        older = MagicMock()
+        older.last_date = "01/01/2024"
+        older.to_date = datetime(2024, 1, 1)
+        newer = MagicMock()
+        newer.last_date = "01/06/2024"
+        newer.to_date = datetime(2024, 6, 1)
+        last_date, from_date = _get_invoice_reading_dates([older, newer])
+        assert last_date == datetime(2024, 6, 1, 0, 0)
+        # from_date comes from the next older invoice's to_date.
+        assert from_date == datetime(2024, 1, 1, 0, 0)
+
+    @freeze_time("2024-06-15")
+    def test_mixed_ordering_is_sorted_by_last_date(self):
+        """Contract: input order must not matter; sorted by lastDate desc."""
+        newest = MagicMock()
+        newest.last_date = "10/06/2024"
+        oldest = MagicMock()
+        oldest.last_date = "10/01/2024"
+        middle = MagicMock()
+        middle.last_date = "10/04/2024"
+        middle.to_date = datetime(2024, 4, 10)
+        # Unsorted input on purpose
+        last_date, from_date = _get_invoice_reading_dates([oldest, newest, middle])
+        assert last_date == datetime(2024, 6, 10, 0, 0)
+        assert from_date == datetime(2024, 4, 10, 0, 0)
+
+    @freeze_time("2024-06-15")
+    def test_next_invoice_with_none_to_date_falls_back_to_today(self):
+        """Contract: a missing to_date on the next invoice must not crash.
+
+        The next (older) invoice's to_date can be None when the billing period
+        is still open; the function must fall back to today instead of raising.
+        """
+        current = MagicMock()
+        current.last_date = "10/03/2024"
+        next_invoice = MagicMock()
+        next_invoice.last_date = "10/02/2024"
+        next_invoice.to_date = None
+        last_date, from_date = _get_invoice_reading_dates([current, next_invoice])
+        assert last_date == datetime(2024, 3, 10, 0, 0)
+        assert from_date == datetime(2024, 6, 15, 0, 0)  # falls back to today
 
 
 class TestExtractValidFutureConsumption:
@@ -255,6 +315,12 @@ class TestExtractValidFutureConsumption:
 
 
 class TestCalculateEstimatedBill:
+    """Contract for future-consumption fallbacks and fixed-price scaling.
+
+    Future consumption is total_import - last_meter_read, falling back to the
+    forecasted value, then to 0; tariffs scale the fixed parts by elapsed days.
+    """
+
     @freeze_time("2024-06-15")
     def test_with_last_invoice(self):
         result = _calculate_estimated_bill(
@@ -333,3 +399,76 @@ class TestCalculateEstimatedBill:
         total_est, fixed, consumption_price, days, _, _, _, _ = result
         assert total_est == 0.0
         assert consumption_price == 0.0
+
+    @freeze_time("2024-06-15")
+    def test_future_consumption_used_when_total_import_missing(self):
+        """Contract: without total_import, the forecasted value is used directly."""
+        info = MagicMock(spec=FutureConsumptionInfo)
+        info.future_consumption = 200.0
+        info.total_import = 0  # missing/unreliable total import
+        info.total_import_date = date(2024, 6, 10)
+        info.future_back_stream = 0
+        info.total_export = 0
+        result = _calculate_estimated_bill(
+            meter_id="m1",
+            future_consumptions={"m1": info},
+            last_meter_read=100.0,
+            last_meter_read_date=date(2024, 6, 1),
+            kwh_tariff=0.5,
+            kva_tariff=10.0,
+            distribution_tariff=30.0,
+            delivery_tariff=20.0,
+            power_size=25.0,
+            last_invoice=MagicMock(),
+        )
+        _, _, consumption_price, _, _, _, _, fut_cons = result
+        assert fut_cons == 200.0
+        assert consumption_price == pytest.approx(100.0)
+
+    @freeze_time("2024-06-15")
+    def test_both_missing_defaults_to_zero_consumption(self):
+        """Contract: missing total_import and forecast falls back to 0 (with warning)."""
+        info = MagicMock(spec=FutureConsumptionInfo)
+        info.future_consumption = 0
+        info.total_import = 0
+        info.total_import_date = date(2024, 6, 10)
+        result = _calculate_estimated_bill(
+            meter_id="m1",
+            future_consumptions={"m1": info},
+            last_meter_read=100.0,
+            last_meter_read_date=date(2024, 6, 1),
+            kwh_tariff=0.5,
+            kva_tariff=10.0,
+            distribution_tariff=30.0,
+            delivery_tariff=20.0,
+            power_size=25.0,
+            last_invoice=MagicMock(),
+        )
+        _, _, consumption_price, _, _, _, _, fut_cons = result
+        assert fut_cons == 0.0
+        assert consumption_price == 0.0
+
+    @freeze_time("2024-06-15")
+    def test_nonzero_tariffs_without_forecast_yield_fixed_price_only(self):
+        """Contract: no forecast data yields a fixed-price-only estimate."""
+        result = _calculate_estimated_bill(
+            meter_id="m1",
+            future_consumptions={"m1": None},
+            last_meter_read=None,
+            last_meter_read_date=None,
+            kwh_tariff=0.5,
+            kva_tariff=10.0,
+            distribution_tariff=30.0,
+            delivery_tariff=20.0,
+            power_size=25.0,
+            last_invoice=EMPTY_INVOICE,
+        )
+        total_est, fixed, consumption_price, days, delivery, distribution, kva, fut_cons = result
+        assert fut_cons == 0.0
+        assert consumption_price == 0.0
+        assert days == 15  # frozen at 2024-06-15
+        assert kva == pytest.approx(10.27)  # round(25*10/365*15, 2)
+        assert distribution == pytest.approx(15.0)
+        assert delivery == pytest.approx(10.0)
+        assert fixed == pytest.approx(35.27)
+        assert total_est == pytest.approx(35.27)

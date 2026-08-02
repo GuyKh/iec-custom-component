@@ -1,4 +1,10 @@
+# Test dependencies.
+#
+# pytest is pinned below 9 for compatibility with pytest-homeassistant-custom-component
+# and Home Assistant's async fixtures: pytest 9 changed how async fixtures are handled,
+# which breaks pytest-homeassistant-custom-component (>=0.13) used with HA 2025.10.
 pytest>=8.0.0,<9
 pytest-asyncio>=0.25.0
 pytest-homeassistant-custom-component>=0.13.0
+pytest-timeout>=2.3.0
 freezegun>=1.5.0
