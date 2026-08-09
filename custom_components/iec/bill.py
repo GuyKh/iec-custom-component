@@ -40,11 +40,16 @@ def _is_backstream_meter_kind(meter_kind: Any) -> bool:
         return int(normalized) == 2
 
     lowered = normalized.lower()
-    return lowered in {"backstream", "דו כיווני"}
+    return lowered in {"backstream", "דו כיווני", "דו-כיווני"}
 
 
 def _map_meter_kind_to_remote_reading_param(meter_kind: Any) -> str:
-    """Translate IEC meter kind to the expected parameter for remote reading API."""
+    """Translate IEC meter kind to the expected parameter for remote reading API.
+
+    Only "Consumption" and "Backstream" are valid API parameters. Hebrew and
+    English inputs are normalized to these two options; unknown values default
+    to "Consumption".
+    """
     if meter_kind is None:
         return ""
 
@@ -57,10 +62,21 @@ def _map_meter_kind_to_remote_reading_param(meter_kind: Any) -> str:
 
     METER_KIND_MAPPING = {
         "צריכה": "Consumption",
-        "דו כיווני": "BackStream",
+        "דו כיווני": "Backstream",
+        "דו-כיווני": "Backstream",
     }
 
-    return METER_KIND_MAPPING.get(normalized, normalized)
+    mapped = METER_KIND_MAPPING.get(normalized)
+    if mapped is not None:
+        return mapped
+
+    lowered = normalized.lower()
+    if lowered == "consumption":
+        return "Consumption"
+    if lowered == "backstream":
+        return "Backstream"
+
+    return "Consumption"
 
 
 def _build_backstream_totals(

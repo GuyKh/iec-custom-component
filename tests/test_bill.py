@@ -33,6 +33,9 @@ class TestIsBackstreamMeterKind:
     def test_string_hebrew_returns_true(self):
         assert _is_backstream_meter_kind("דו כיווני") is True
 
+    def test_string_hebrew_hyphen_returns_true(self):
+        assert _is_backstream_meter_kind("דו-כיווני") is True
+
     def test_none_returns_false(self):
         assert _is_backstream_meter_kind(None) is False
 
@@ -58,7 +61,10 @@ class TestMapMeterKind:
         assert _map_meter_kind_to_remote_reading_param("צריכה") == "Consumption"
 
     def test_backstream_hebrew(self):
-        assert _map_meter_kind_to_remote_reading_param("דו כיווני") == "BackStream"
+        assert _map_meter_kind_to_remote_reading_param("דו כיווני") == "Backstream"
+
+    def test_backstream_hebrew_hyphen(self):
+        assert _map_meter_kind_to_remote_reading_param("דו-כיווני") == "Backstream"
 
     def test_none_returns_empty(self):
         assert _map_meter_kind_to_remote_reading_param(None) == ""
@@ -66,8 +72,11 @@ class TestMapMeterKind:
     def test_english_identity(self):
         assert _map_meter_kind_to_remote_reading_param("Consumption") == "Consumption"
 
-    def test_unknown_identity(self):
-        assert _map_meter_kind_to_remote_reading_param("SomeKind") == "SomeKind"
+    def test_english_backstream(self):
+        assert _map_meter_kind_to_remote_reading_param("BackStream") == "Backstream"
+
+    def test_unknown_returns_consumption(self):
+        assert _map_meter_kind_to_remote_reading_param("SomeKind") == "Consumption"
 
     def test_enum_like(self):
         obj = MagicMock()
