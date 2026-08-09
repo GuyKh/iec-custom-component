@@ -316,6 +316,29 @@ SMART_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
             )
         ),
     ),
+    IecMeterEntityDescription(
+        key="elec_consumption_since_last_invoice",
+        device_class=SensorDeviceClass.ENERGY,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        state_class=SensorStateClass.TOTAL,
+        suggested_display_precision=3,
+        value_fn=lambda data: (
+            data[FUTURE_CONSUMPTIONS_DICT_NAME][
+                data[ATTRIBUTES_DICT_NAME][METER_ID_ATTR_NAME]
+            ].future_consumption
+            if (
+                data[FUTURE_CONSUMPTIONS_DICT_NAME]
+                and data[FUTURE_CONSUMPTIONS_DICT_NAME].get(
+                    data[ATTRIBUTES_DICT_NAME][METER_ID_ATTR_NAME]
+                )
+                and data[FUTURE_CONSUMPTIONS_DICT_NAME][
+                    data[ATTRIBUTES_DICT_NAME][METER_ID_ATTR_NAME]
+                ].future_consumption
+                is not None
+            )
+            else None
+        ),
+    ),
 )
 
 BACKSTREAM_ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
@@ -420,9 +443,7 @@ ELEC_SENSORS: tuple[IecEntityDescription, ...] = (
         key="iec_bill_last_payment_date",
         device_class=SensorDeviceClass.DATE,
         value_fn=lambda data: (
-            _parse_invoice_last_date(
-                data[INVOICE_DICT_NAME].last_date
-            )
+            _parse_invoice_last_date(data[INVOICE_DICT_NAME].last_date)
             if (data[INVOICE_DICT_NAME] != EMPTY_INVOICE)
             else None
         ),
