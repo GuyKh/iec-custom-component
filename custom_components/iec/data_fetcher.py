@@ -19,6 +19,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import aiohttp_client
 from iec_api.iec_client import IecClient
+from iec_api.models.contract import Contract
 from iec_api.models.device import Device, Devices
 from iec_api.models.device_in import DeviceInDevice
 from iec_api.models.exceptions import IECError
@@ -31,6 +32,7 @@ from iec_api.models.remote_reading import (
 
 from .bill import _map_meter_kind_to_remote_reading_param, _select_meter_data
 from .commons import find_reading_by_date
+from .const import CONF_BP_NUMBER, CONF_BP_NUMBER_TO_CONTRACT
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -62,6 +64,7 @@ class IecDataFetcher:
 
         self._today_readings: dict[str, RemoteReadingResponse] = {}
         self._devices_by_contract_id: dict[int, list[DeviceInDevice]] = {}
+        self._contracts_by_bp_number: dict[str, list[Contract]] = {}
         self._last_meter_reading: dict[tuple[int, int], MeterReading] = {}
         self._devices_by_meter_id: dict[str, Devices] = {}
         self._delivery_tariff_by_phase: dict[int, float] = {}
@@ -113,6 +116,7 @@ class IecDataFetcher:
                 api_devices: list[Device] | None = await self._api_call(
                     self.api.get_devices(contract_id_normalized)
                 )
+                meter_kind = await self._get_meter_kind_for_contract(contract_id)
                 devices = []
                 for device in api_devices or []:
                     if not device.device_number or not device.device_code:
@@ -129,7 +133,7 @@ class IecDataFetcher:
                             device_type=device.device_type or 0,
                             device_number=device.device_number,
                             device_code=device.device_code,
-                            meter_kind="Consumption",
+                            meter_kind=meter_kind,
                         )
                     )
                 self._devices_by_contract_id[contract_id] = devices
@@ -140,6 +144,49 @@ class IecDataFetcher:
                 )
                 devices = []
         return devices or []
+
+    async def _get_meter_kind_for_contract(self, contract_id: int) -> str:
+        """Return the remote reading meter kind for a contract.
+
+        Private producers (e.g. solar) have bidirectional meters, so their
+        readings must be requested with "Backstream" to get export data.
+        Falls back to "Consumption" when the producer status is unknown.
+        """
+        bp_number = self._get_bp_number_for_contract(contract_id)
+        if not bp_number:
+            return "Consumption"
+
+        contracts = self._contracts_by_bp_number.get(bp_number, _MISSING)
+        if contracts is _MISSING:
+            try:
+                contracts = await self._api_call(
+                    self.api.get_contracts(bp_number)
+                )
+            except IECError:
+                _LOGGER.exception(
+                    "Failed fetching contracts for BP number %s",
+                    bp_number,
+                )
+                contracts = []
+            self._contracts_by_bp_number[bp_number] = contracts
+
+        for contract in contracts or []:
+            if contract.contract_id and int(contract.contract_id) == contract_id:
+                return (
+                    "Backstream" if contract.from_private_producer else "Consumption"
+                )
+        return "Consumption"
+
+    def _get_bp_number_for_contract(self, contract_id: int) -> str | None:
+        """Return the BP number associated with a contract id."""
+        bp_number_to_contract = self._config_entry.data.get(
+            CONF_BP_NUMBER_TO_CONTRACT
+        )
+        if isinstance(bp_number_to_contract, dict):
+            for bp_number, contract_ids in bp_number_to_contract.items():
+                if contract_id in {int(c) for c in contract_ids}:
+                    return self._normalize_bp_number(str(bp_number))
+        return self._normalize_bp_number(self._config_entry.data.get(CONF_BP_NUMBER))
 
     async def _get_devices_by_device_id(self, meter_id: str) -> Devices | None:
         """Fetch device details by meter ID, cached per cycle."""
@@ -567,6 +614,7 @@ class IecDataFetcher:
         """Clear all per-update-cycle caches. Called after each update cycle."""
         self._today_readings = {}
         self._devices_by_contract_id = {}
+        self._contracts_by_bp_number = {}
         self._readings = {}
         self._last_meter_reading = {}
         self._kwh_tariff = _MISSING
