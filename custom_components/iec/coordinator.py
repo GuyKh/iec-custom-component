@@ -564,8 +564,13 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                             future_consumption[device.device_number] = (
                                 monthly_future_consumption
                             )
+                        # Classify from the request-side kind (contract's
+                        # private-producer flag). The response `meterKind`
+                        # flips between 1 and 2 for the same meter depending
+                        # on the queried period, so it is not a reliable
+                        # indicator of a bidirectional meter.
                         backstream_meters[device.device_number] = (
-                            _is_backstream_meter_kind(meter.meter_kind)
+                            _is_backstream_meter_kind(device.meter_kind)
                         )
                         backstream_totals[device.device_number] = (
                             _build_backstream_totals(monthly_future_consumption)
