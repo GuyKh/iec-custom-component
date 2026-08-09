@@ -78,10 +78,30 @@ class TestMapMeterKind:
     def test_unknown_returns_consumption(self):
         assert _map_meter_kind_to_remote_reading_param("SomeKind") == "Consumption"
 
+    def test_int_2_returns_backstream(self):
+        assert _map_meter_kind_to_remote_reading_param(2) == "Backstream"
+
+    def test_int_1_returns_consumption(self):
+        assert _map_meter_kind_to_remote_reading_param(1) == "Consumption"
+
+    def test_int_3_returns_consumption(self):
+        assert _map_meter_kind_to_remote_reading_param(3) == "Consumption"
+
+    def test_string_2_returns_backstream(self):
+        assert _map_meter_kind_to_remote_reading_param("2") == "Backstream"
+
+    def test_string_1_returns_consumption(self):
+        assert _map_meter_kind_to_remote_reading_param("1") == "Consumption"
+
     def test_enum_like(self):
         obj = MagicMock()
         obj.value = "צריכה"
         assert _map_meter_kind_to_remote_reading_param(obj) == "Consumption"
+
+    def test_enum_like_with_numeric_value(self):
+        obj = MagicMock()
+        obj.value = 2
+        assert _map_meter_kind_to_remote_reading_param(obj) == "Backstream"
 
 
 class TestBuildBackstreamTotals:
@@ -345,7 +365,16 @@ class TestCalculateEstimatedBill:
             last_invoice=MagicMock(),
         )
         assert len(result) == 8
-        total_est, fixed, consumption_price, days, delivery, distribution, kva, fut_cons = result
+        (
+            total_est,
+            fixed,
+            consumption_price,
+            days,
+            delivery,
+            distribution,
+            kva,
+            fut_cons,
+        ) = result
         assert days >= 1
         assert isinstance(total_est, float)
         assert isinstance(consumption_price, float)
@@ -364,7 +393,16 @@ class TestCalculateEstimatedBill:
             power_size=25.0,
             last_invoice=EMPTY_INVOICE,
         )
-        total_est, fixed, consumption_price, days, delivery, distribution, kva, fut_cons = result
+        (
+            total_est,
+            fixed,
+            consumption_price,
+            days,
+            delivery,
+            distribution,
+            kva,
+            fut_cons,
+        ) = result
         assert isinstance(total_est, float)
 
     @freeze_time("2024-06-15")
@@ -472,7 +510,16 @@ class TestCalculateEstimatedBill:
             power_size=25.0,
             last_invoice=EMPTY_INVOICE,
         )
-        total_est, fixed, consumption_price, days, delivery, distribution, kva, fut_cons = result
+        (
+            total_est,
+            fixed,
+            consumption_price,
+            days,
+            delivery,
+            distribution,
+            kva,
+            fut_cons,
+        ) = result
         assert fut_cons == 0.0
         assert consumption_price == 0.0
         assert days == 15  # frozen at 2024-06-15
