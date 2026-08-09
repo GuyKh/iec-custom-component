@@ -13,6 +13,7 @@ from typing import Any
 from iec_api.models.remote_reading import (
     FutureConsumptionInfo,
     MeterReadingData,
+    ReadingResolution,
     RemoteReadingResponse,
 )
 
@@ -80,6 +81,50 @@ def _build_backstream_totals(
         "total_back_stream_for_period": future_info.future_back_stream,
         "total_export": future_info.total_export,
     }
+
+
+def _needs_future_consumption_fallback(
+    future_consumption: dict[str, FutureConsumptionInfo | None],
+    backstream_meters: dict[str, bool],
+    backstream_totals: dict[str, dict[str, float | None]],
+    device_number: str,
+) -> bool:
+    """Return whether a fallback reading window is needed for future consumption.
+
+    The IEC API returns zeroed backstream fields in the current month's monthly
+    aggregation even for bidirectional meters, so a backstream meter whose
+    monthly export came back empty must fall back to another reading window.
+    """
+    if not future_consumption.get(device_number):
+        return True
+    return bool(
+        backstream_meters.get(device_number)
+        and not backstream_totals.get(device_number, {}).get("total_export")
+    )
+
+
+def _future_consumption_candidate_dates(
+    today: datetime,
+) -> list[tuple[datetime, ReadingResolution]]:
+    """Return fallback windows to probe for future consumption data, newest first.
+
+    The IEC API does not always publish export data for the current period, so
+    progressively older windows are probed: the last three days, then the most
+    recent completed week (last Sunday; two Sundays ago when today is Sunday),
+    then the first of the current month (or the first of the previous month
+    when today is the first).
+    """
+    last_sunday = today - timedelta(days=today.weekday() + 1)
+    first_of_month = today.replace(day=1)
+    if today.day == 1:
+        first_of_month = (first_of_month - timedelta(days=1)).replace(day=1)
+    return [
+        (today, ReadingResolution.DAILY),
+        (today - timedelta(days=1), ReadingResolution.DAILY),
+        (today - timedelta(days=2), ReadingResolution.DAILY),
+        (last_sunday, ReadingResolution.WEEKLY),
+        (first_of_month, ReadingResolution.MONTHLY),
+    ]
 
 
 def _select_meter_data(
