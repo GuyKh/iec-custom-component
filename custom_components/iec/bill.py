@@ -22,33 +22,13 @@ from .const import EMPTY_INVOICE
 _LOGGER = logging.getLogger(__name__)
 
 
-def _is_backstream_meter_kind(meter_kind: Any) -> bool:
-    """Return whether the IEC meter kind represents bidirectional export."""
-    if meter_kind is None:
-        return False
-
-    if isinstance(meter_kind, int):
-        return meter_kind == 2
-
-    normalized = str(
-        meter_kind.value if hasattr(meter_kind, "value") else meter_kind
-    ).strip()
-    if not normalized:
-        return False
-
-    if normalized.isdigit():
-        return int(normalized) == 2
-
-    lowered = normalized.lower()
-    return lowered in {"backstream", "דו כיווני", "דו-כיווני"}
-
-
 def _map_meter_kind_to_remote_reading_param(meter_kind: Any) -> str:
     """Translate IEC meter kind to the expected parameter for remote reading API.
 
     Only "Consumption" and "Backstream" are valid API parameters. Hebrew and
-    English inputs are normalized to these two options; unknown values default
-    to "Consumption".
+    English inputs are normalized to these two options; the numeric values
+    returned by the API (1 = Consumption, 2 = Backstream) are translated the
+    same way. Unknown values default to "Consumption".
     """
     if meter_kind is None:
         return ""
@@ -59,6 +39,9 @@ def _map_meter_kind_to_remote_reading_param(meter_kind: Any) -> str:
 
     if not normalized:
         return ""
+
+    if normalized.isdigit():
+        return "Backstream" if int(normalized) == 2 else "Consumption"
 
     METER_KIND_MAPPING = {
         "צריכה": "Consumption",
@@ -77,6 +60,11 @@ def _map_meter_kind_to_remote_reading_param(meter_kind: Any) -> str:
         return "Backstream"
 
     return "Consumption"
+
+
+def _is_backstream_meter_kind(meter_kind: Any) -> bool:
+    """Return whether the IEC meter kind represents bidirectional export."""
+    return _map_meter_kind_to_remote_reading_param(meter_kind) == "Backstream"
 
 
 def _build_backstream_totals(
