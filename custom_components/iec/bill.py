@@ -180,8 +180,12 @@ def _get_invoice_reading_dates(
     """Get the last invoice date and from date for RemoteReadingRange API call.
 
     Returns: (last_invoice_date, from_date) tuple.
-    - last_invoice_date: The lastDate of the most recent invoice where lastDate <= today.
-    - from_date: The toDate of the next invoice after that (or today if none exists).
+    - last_invoice_date: The day after the most recent invoice's fullDate
+      (full_date + 1 day), where full_date <= today. IEC only returns real
+      (non-zeroed) export data for the current period when lastInvoiceDate is
+      set to this value; sending the period start zeroes it out.
+    - from_date: The toDate of the next invoice after that (or today if none
+      exists).
     """
     if not invoices:
         return None, None
@@ -190,7 +194,7 @@ def _get_invoice_reading_dates(
 
     sorted_invoices = sorted(
         invoices,
-        key=lambda inv: _parse_invoice_last_date(inv.last_date) or date.min,
+        key=lambda inv: inv.full_date.date() if inv.full_date else date.min,
         reverse=True,
     )
 
@@ -198,9 +202,11 @@ def _get_invoice_reading_dates(
     from_date_obj = None
 
     for i, invoice in enumerate(sorted_invoices):
-        parsed_last_date = _parse_invoice_last_date(invoice.last_date)
-        if parsed_last_date and parsed_last_date <= today:
-            last_invoice_date_obj = datetime.combine(parsed_last_date, time.min)
+        full_date = invoice.full_date
+        if full_date and full_date.date() <= today:
+            last_invoice_date_obj = datetime.combine(
+                full_date.date() + timedelta(days=1), time.min
+            )
             if i + 1 < len(sorted_invoices):
                 to_date = sorted_invoices[i + 1].to_date
                 if isinstance(to_date, datetime):

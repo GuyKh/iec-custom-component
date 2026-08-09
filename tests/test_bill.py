@@ -255,8 +255,10 @@ class TestParseInvoiceLastDate:
 class TestGetInvoiceReadingDates:
     """Contract: the reading window derives from the most recent PAST invoice.
 
-    Invoices whose lastDate is in the future are ignored; the from_date is the
-    to_date of the next older invoice (or today when none exists).
+    Invoices whose fullDate is in the future are ignored; the from_date is the
+    to_date of the next older invoice (or today when none exists). The
+    last_invoice_date sent to IEC is fullDate + 1 day, which is the only value
+    that returns real (non-zeroed) export data for the current period.
     """
 
     def test_empty_invoices(self):
@@ -268,59 +270,59 @@ class TestGetInvoiceReadingDates:
     @freeze_time("2024-06-15")
     def test_single_invoice_current(self):
         invoice = MagicMock()
-        invoice.last_date = "10/06/2024"
+        invoice.full_date = datetime(2024, 6, 1)
         invoice.to_date = datetime(2024, 6, 10)
         last_date, from_date = _get_invoice_reading_dates([invoice])
-        assert last_date == datetime(2024, 6, 10, 0, 0)
+        assert last_date == datetime(2024, 6, 2, 0, 0)
         assert from_date == datetime(2024, 6, 15, 0, 0)
 
     @freeze_time("2024-03-15")
     def test_future_invoice_skipped(self):
         future = MagicMock()
-        future.last_date = "20/06/2024"
+        future.full_date = datetime(2024, 7, 1)
         current = MagicMock()
-        current.last_date = "10/03/2024"
+        current.full_date = datetime(2024, 3, 1)
         current.to_date = datetime(2024, 3, 10)
         last_date, from_date = _get_invoice_reading_dates([future, current])
-        assert last_date == datetime(2024, 3, 10, 0, 0)
+        assert last_date == datetime(2024, 3, 2, 0, 0)
         assert from_date == datetime(2024, 3, 15, 0, 0)
 
     @freeze_time("2024-06-15")
     def test_only_future_invoices_return_none(self):
         """Contract: invoices entirely in the future yield no reading window."""
         future1 = MagicMock()
-        future1.last_date = "20/06/2024"
+        future1.full_date = datetime(2024, 7, 1)
         future2 = MagicMock()
-        future2.last_date = "25/06/2024"
+        future2.full_date = datetime(2024, 7, 5)
         assert _get_invoice_reading_dates([future1, future2]) == (None, None)
 
     @freeze_time("2024-06-15")
     def test_only_past_invoices_uses_most_recent(self):
         """Contract: the most recent past invoice sets the window start."""
         older = MagicMock()
-        older.last_date = "01/01/2024"
+        older.full_date = datetime(2024, 1, 1)
         older.to_date = datetime(2024, 1, 1)
         newer = MagicMock()
-        newer.last_date = "01/06/2024"
+        newer.full_date = datetime(2024, 6, 1)
         newer.to_date = datetime(2024, 6, 1)
         last_date, from_date = _get_invoice_reading_dates([older, newer])
-        assert last_date == datetime(2024, 6, 1, 0, 0)
+        assert last_date == datetime(2024, 6, 2, 0, 0)
         # from_date comes from the next older invoice's to_date.
         assert from_date == datetime(2024, 1, 1, 0, 0)
 
     @freeze_time("2024-06-15")
-    def test_mixed_ordering_is_sorted_by_last_date(self):
-        """Contract: input order must not matter; sorted by lastDate desc."""
+    def test_mixed_ordering_is_sorted_by_full_date(self):
+        """Contract: input order must not matter; sorted by fullDate desc."""
         newest = MagicMock()
-        newest.last_date = "10/06/2024"
+        newest.full_date = datetime(2024, 6, 1)
         oldest = MagicMock()
-        oldest.last_date = "10/01/2024"
+        oldest.full_date = datetime(2024, 1, 1)
         middle = MagicMock()
-        middle.last_date = "10/04/2024"
+        middle.full_date = datetime(2024, 4, 1)
         middle.to_date = datetime(2024, 4, 10)
         # Unsorted input on purpose
         last_date, from_date = _get_invoice_reading_dates([oldest, newest, middle])
-        assert last_date == datetime(2024, 6, 10, 0, 0)
+        assert last_date == datetime(2024, 6, 2, 0, 0)
         assert from_date == datetime(2024, 4, 10, 0, 0)
 
     @freeze_time("2024-06-15")
@@ -331,12 +333,12 @@ class TestGetInvoiceReadingDates:
         is still open; the function must fall back to today instead of raising.
         """
         current = MagicMock()
-        current.last_date = "10/03/2024"
+        current.full_date = datetime(2024, 3, 1)
         next_invoice = MagicMock()
-        next_invoice.last_date = "10/02/2024"
+        next_invoice.full_date = datetime(2024, 2, 1)
         next_invoice.to_date = None
         last_date, from_date = _get_invoice_reading_dates([current, next_invoice])
-        assert last_date == datetime(2024, 3, 10, 0, 0)
+        assert last_date == datetime(2024, 3, 2, 0, 0)
         assert from_date == datetime(2024, 6, 15, 0, 0)  # falls back to today
 
 
