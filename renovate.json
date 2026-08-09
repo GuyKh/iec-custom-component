@@ -12,11 +12,6 @@
     },
     {
       "matchDatasources": ["pypi"],
-      "matchPackageNames": ["pytest"],
-      "enabled": false
-    },
-    {
-      "matchDatasources": ["pypi"],
       "matchPaths": ["requirements.txt"],
       "automerge": true
     }
