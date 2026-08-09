@@ -30,6 +30,12 @@ class TestIsBackstreamMeterKind:
     def test_string_backstream_returns_true(self):
         assert _is_backstream_meter_kind("BackStream") is True
 
+    def test_string_backstream_canonical_returns_true(self):
+        assert _is_backstream_meter_kind("Backstream") is True
+
+    def test_string_consumption_returns_false(self):
+        assert _is_backstream_meter_kind("Consumption") is False
+
     def test_string_hebrew_returns_true(self):
         assert _is_backstream_meter_kind("דו כיווני") is True
 
