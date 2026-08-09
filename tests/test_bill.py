@@ -10,14 +10,20 @@ from custom_components.iec.bill import (
     _build_backstream_totals,
     _calculate_estimated_bill,
     _extract_valid_future_consumption,
+    _future_consumption_candidate_dates,
     _get_invoice_reading_dates,
     _is_backstream_meter_kind,
     _map_meter_kind_to_remote_reading_param,
+    _needs_future_consumption_fallback,
     _parse_invoice_last_date,
     _select_meter_data,
 )
 from custom_components.iec.const import EMPTY_INVOICE
-from iec_api.models.remote_reading import FutureConsumptionInfo, MeterReadingData
+from iec_api.models.remote_reading import (
+    FutureConsumptionInfo,
+    MeterReadingData,
+    ReadingResolution,
+)
 
 
 class TestIsBackstreamMeterKind:
@@ -121,6 +127,64 @@ class TestBuildBackstreamTotals:
         info.total_export = 200.0
         result = _build_backstream_totals(info)
         assert result == {"total_back_stream_for_period": 100.0, "total_export": 200.0}
+
+
+class TestNeedsFutureConsumptionFallback:
+    def _future_info(self, consumption=100.0):
+        info = MagicMock(spec=FutureConsumptionInfo)
+        info.future_consumption = consumption
+        return info
+
+    def test_missing_future_consumption_returns_true(self):
+        assert _needs_future_consumption_fallback({}, {}, {}, "m1") is True
+
+    def test_none_future_consumption_returns_true(self):
+        assert _needs_future_consumption_fallback({"m1": None}, {}, {}, "m1") is True
+
+    def test_consumption_meter_with_data_returns_false(self):
+        future_consumption = {"m1": self._future_info()}
+        assert (
+            _needs_future_consumption_fallback(
+                future_consumption,
+                {"m1": False},
+                {"m1": {"total_export": 0.0}},
+                "m1",
+            )
+            is False
+        )
+
+    def test_backstream_meter_zero_export_returns_true(self):
+        future_consumption = {"m1": self._future_info()}
+        assert (
+            _needs_future_consumption_fallback(
+                future_consumption,
+                {"m1": True},
+                {"m1": {"total_export": 0.0}},
+                "m1",
+            )
+            is True
+        )
+
+    def test_backstream_meter_missing_totals_returns_true(self):
+        future_consumption = {"m1": self._future_info()}
+        assert (
+            _needs_future_consumption_fallback(
+                future_consumption, {"m1": True}, {}, "m1"
+            )
+            is True
+        )
+
+    def test_backstream_meter_with_real_export_returns_false(self):
+        future_consumption = {"m1": self._future_info()}
+        assert (
+            _needs_future_consumption_fallback(
+                future_consumption,
+                {"m1": True},
+                {"m1": {"total_export": 39225.556}},
+                "m1",
+            )
+            is False
+        )
 
 
 class TestSelectMeterData:
@@ -534,3 +598,39 @@ class TestCalculateEstimatedBill:
         assert delivery == pytest.approx(10.0)
         assert fixed == pytest.approx(35.27)
         assert total_est == pytest.approx(35.27)
+
+
+class TestFutureConsumptionCandidateDates:
+    def test_returns_five_candidates_newest_first(self):
+        candidates = _future_consumption_candidate_dates(datetime(2026, 8, 10))
+        assert [resolution for _, resolution in candidates] == [
+            ReadingResolution.DAILY,
+            ReadingResolution.DAILY,
+            ReadingResolution.DAILY,
+            ReadingResolution.WEEKLY,
+            ReadingResolution.MONTHLY,
+        ]
+
+    def test_daily_candidates_are_last_three_days(self):
+        candidates = _future_consumption_candidate_dates(datetime(2026, 8, 10))
+        assert [req_date for req_date, _ in candidates[:3]] == [
+            datetime(2026, 8, 10),
+            datetime(2026, 8, 9),
+            datetime(2026, 8, 8),
+        ]
+
+    def test_monday_weekly_candidate_is_previous_sunday(self):
+        candidates = _future_consumption_candidate_dates(datetime(2026, 8, 10))
+        assert candidates[3] == (datetime(2026, 8, 9), ReadingResolution.WEEKLY)
+
+    def test_sunday_weekly_candidate_is_two_sundays_ago(self):
+        candidates = _future_consumption_candidate_dates(datetime(2026, 8, 9))
+        assert candidates[3] == (datetime(2026, 8, 2), ReadingResolution.WEEKLY)
+
+    def test_non_first_of_month_monthly_candidate_is_current_month_first(self):
+        candidates = _future_consumption_candidate_dates(datetime(2026, 8, 9))
+        assert candidates[4] == (datetime(2026, 8, 1), ReadingResolution.MONTHLY)
+
+    def test_first_of_month_monthly_candidate_is_previous_month_first(self):
+        candidates = _future_consumption_candidate_dates(datetime(2026, 8, 1))
+        assert candidates[4] == (datetime(2026, 7, 1), ReadingResolution.MONTHLY)
