@@ -21,20 +21,24 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from iec_api.iec_client import IecClient
 from iec_api.models.contract import Contract
 from iec_api.models.device import Devices
+from iec_api.models.device_in import DeviceInDevice
 from iec_api.models.exceptions import IECError
 from iec_api.models.jwt import JWT
 from iec_api.models.remote_reading import (
     FutureConsumptionInfo,
     PeriodConsumption,
     ReadingResolution,
+    RemoteReadingResponse,
 )
 
 from .bill import (
     _build_backstream_totals,
     _calculate_estimated_bill,
     _extract_valid_future_consumption,
+    _future_consumption_candidate_dates,
     _get_invoice_reading_dates,
     _is_backstream_meter_kind,
+    _needs_future_consumption_fallback,
     _select_meter_data,
 )
 from .commons import TIMEZONE
@@ -77,6 +81,50 @@ from .data_fetcher import IecDataFetcher
 from .statistics import insert_statistics
 
 _LOGGER = logging.getLogger(__name__)
+
+
+async def _probe_future_consumption(
+    fetcher: IecDataFetcher,
+    contract_id: int,
+    device: DeviceInDevice,
+    today_reading_key: str,
+    today: datetime,
+    is_backstream: bool,
+) -> tuple[FutureConsumptionInfo | None, RemoteReadingResponse | None]:
+    """Probe progressively older windows for future consumption data.
+
+    The IEC API does not always publish export data for the current period,
+    so progressively older windows are probed (see
+    ``_future_consumption_candidate_dates``). The newest valid candidate is
+    kept as a baseline; for backstream meters, candidates whose export data
+    was zeroed by the API are skipped in favour of older windows.
+    """
+    fallback_fc: FutureConsumptionInfo | None = None
+    fallback_reading: RemoteReadingResponse | None = None
+    for req_date, resolution in _future_consumption_candidate_dates(today):
+        candidate_reading = None
+        if req_date == today:
+            candidate_reading = fetcher._today_readings.get(today_reading_key)
+        if candidate_reading is None:
+            candidate_reading = await fetcher._get_readings(
+                contract_id,
+                device.device_number,
+                device.device_code,
+                req_date,
+                resolution,
+                device.meter_kind,
+            )
+        candidate_fc = _extract_valid_future_consumption(candidate_reading)
+        if not candidate_fc:
+            continue
+        if fallback_fc is None:
+            fallback_fc = candidate_fc
+            fallback_reading = candidate_reading
+        if not is_backstream or candidate_fc.total_export:
+            fallback_fc = candidate_fc
+            fallback_reading = candidate_reading
+            break
+    return fallback_fc, fallback_reading
 
 
 class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
@@ -506,19 +554,20 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                         reading_type.name,
                         reading_date,
                     )
-                    # Use invoice-based date for MONTHLY readings, otherwise use computed date
-                    # But don't override when we specifically want current month data (first of current month)
+                    # IEC returns zeroed export (backstream) data for the
+                    # current period unless lastInvoiceDate is the day after
+                    # the last invoice, so always pass it for MONTHLY readings;
+                    # fromDate stays the first of the current month.
                     assert reading_date is not None
                     actual_reading_date = datetime.combine(reading_date, time.min)
                     actual_last_invoice_date = None
-                    if (
-                        reading_type == ReadingResolution.MONTHLY
-                        and from_date
-                        and last_invoice_date
-                        and reading_date != localized_first_of_month.date()
-                    ):
-                        actual_reading_date = from_date
+                    if reading_type == ReadingResolution.MONTHLY and last_invoice_date:
                         actual_last_invoice_date = last_invoice_date
+                        if (
+                            from_date
+                            and reading_date != localized_first_of_month.date()
+                        ):
+                            actual_reading_date = from_date
 
                     remote_reading = await self._fetcher._get_readings(
                         contract_id,
@@ -564,8 +613,13 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                             future_consumption[device.device_number] = (
                                 monthly_future_consumption
                             )
+                        # Classify from the request-side kind (contract's
+                        # private-producer flag). The response `meterKind`
+                        # flips between 1 and 2 for the same meter depending
+                        # on the queried period, so it is not a reliable
+                        # indicator of a bidirectional meter.
                         backstream_meters[device.device_number] = (
-                            _is_backstream_meter_kind(meter.meter_kind)
+                            _is_backstream_meter_kind(device.meter_kind)
                         )
                         backstream_totals[device.device_number] = (
                             _build_backstream_totals(monthly_future_consumption)
@@ -613,67 +667,45 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                             )
 
                     # fallbacks for future consumption since IEC api is broken :/
-                    if not future_consumption.get(device.device_number):
-                        today_future_consumption = _extract_valid_future_consumption(
-                            self._fetcher._today_readings.get(today_reading_key),
-                        )
-                        _LOGGER.debug(
-                            "Today's future consumption extraction result: %s",
-                            today_future_consumption,
+                    if _needs_future_consumption_fallback(
+                        future_consumption,
+                        backstream_meters,
+                        backstream_totals,
+                        device.device_number,
+                    ):
+                        fallback_fc, fallback_reading = await _probe_future_consumption(
+                            self._fetcher,
+                            contract_id,
+                            device,
+                            today_reading_key,
+                            localized_today,
+                            backstream_meters[device.device_number],
                         )
 
-                        if today_future_consumption:
-                            future_consumption[device.device_number] = (
-                                today_future_consumption
-                            )
+                        if fallback_fc:
+                            future_consumption[device.device_number] = fallback_fc
                             backstream_totals[device.device_number] = (
-                                _build_backstream_totals(today_future_consumption)
+                                _build_backstream_totals(fallback_fc)
                             )
-                        else:
-                            req_date = localized_today - timedelta(days=2)
-                            two_days_ago_reading = await self._fetcher._get_readings(
-                                contract_id,
-                                device.device_number,
-                                device.device_code,
-                                req_date,
-                                ReadingResolution.MONTHLY,
-                                device.meter_kind,
-                            )
-                            two_days_ago_future_consumption = (
-                                _extract_valid_future_consumption(
-                                    two_days_ago_reading,
-                                )
-                            )
-                            two_days_ago_meter = _select_meter_data(
-                                two_days_ago_reading,
+                            fallback_meter = _select_meter_data(
+                                fallback_reading,
                                 device.device_number,
                                 device.device_code,
                             )
-
-                            if two_days_ago_meter and not daily_readings.get(
+                            if fallback_meter and not daily_readings.get(
                                 device.device_number
                             ):
                                 daily_readings[device.device_number] = (
-                                    two_days_ago_meter.period_consumptions
+                                    fallback_meter.period_consumptions
                                 )
-
-                            if two_days_ago_future_consumption:
-                                future_consumption[device.device_number] = (
-                                    two_days_ago_future_consumption
-                                )
-                                backstream_totals[device.device_number] = (
-                                    _build_backstream_totals(
-                                        two_days_ago_future_consumption
-                                    )
-                                )
-                            else:
-                                _LOGGER.warning(
-                                    "Failed fetching FutureConsumption, data in IEC API is corrupted"
-                                )
-                                future_consumption[device.device_number] = None
-                                backstream_totals[device.device_number] = (
-                                    _build_backstream_totals(None)
-                                )
+                        else:
+                            _LOGGER.warning(
+                                "Failed fetching FutureConsumption, data in IEC API is corrupted"
+                            )
+                            future_consumption[device.device_number] = None
+                            backstream_totals[device.device_number] = (
+                                _build_backstream_totals(None)
+                            )
 
                     try:
                         (

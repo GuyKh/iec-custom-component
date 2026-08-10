@@ -10,14 +10,20 @@ from custom_components.iec.bill import (
     _build_backstream_totals,
     _calculate_estimated_bill,
     _extract_valid_future_consumption,
+    _future_consumption_candidate_dates,
     _get_invoice_reading_dates,
     _is_backstream_meter_kind,
     _map_meter_kind_to_remote_reading_param,
+    _needs_future_consumption_fallback,
     _parse_invoice_last_date,
     _select_meter_data,
 )
 from custom_components.iec.const import EMPTY_INVOICE
-from iec_api.models.remote_reading import FutureConsumptionInfo, MeterReadingData
+from iec_api.models.remote_reading import (
+    FutureConsumptionInfo,
+    MeterReadingData,
+    ReadingResolution,
+)
 
 
 class TestIsBackstreamMeterKind:
@@ -30,8 +36,17 @@ class TestIsBackstreamMeterKind:
     def test_string_backstream_returns_true(self):
         assert _is_backstream_meter_kind("BackStream") is True
 
+    def test_string_backstream_canonical_returns_true(self):
+        assert _is_backstream_meter_kind("Backstream") is True
+
+    def test_string_consumption_returns_false(self):
+        assert _is_backstream_meter_kind("Consumption") is False
+
     def test_string_hebrew_returns_true(self):
         assert _is_backstream_meter_kind("דו כיווני") is True
+
+    def test_string_hebrew_hyphen_returns_true(self):
+        assert _is_backstream_meter_kind("דו-כיווני") is True
 
     def test_none_returns_false(self):
         assert _is_backstream_meter_kind(None) is False
@@ -58,7 +73,10 @@ class TestMapMeterKind:
         assert _map_meter_kind_to_remote_reading_param("צריכה") == "Consumption"
 
     def test_backstream_hebrew(self):
-        assert _map_meter_kind_to_remote_reading_param("דו כיווני") == "BackStream"
+        assert _map_meter_kind_to_remote_reading_param("דו כיווני") == "Backstream"
+
+    def test_backstream_hebrew_hyphen(self):
+        assert _map_meter_kind_to_remote_reading_param("דו-כיווני") == "Backstream"
 
     def test_none_returns_empty(self):
         assert _map_meter_kind_to_remote_reading_param(None) == ""
@@ -66,13 +84,36 @@ class TestMapMeterKind:
     def test_english_identity(self):
         assert _map_meter_kind_to_remote_reading_param("Consumption") == "Consumption"
 
-    def test_unknown_identity(self):
-        assert _map_meter_kind_to_remote_reading_param("SomeKind") == "SomeKind"
+    def test_english_backstream(self):
+        assert _map_meter_kind_to_remote_reading_param("BackStream") == "Backstream"
+
+    def test_unknown_returns_consumption(self):
+        assert _map_meter_kind_to_remote_reading_param("SomeKind") == "Consumption"
+
+    def test_int_2_returns_backstream(self):
+        assert _map_meter_kind_to_remote_reading_param(2) == "Backstream"
+
+    def test_int_1_returns_consumption(self):
+        assert _map_meter_kind_to_remote_reading_param(1) == "Consumption"
+
+    def test_int_3_returns_consumption(self):
+        assert _map_meter_kind_to_remote_reading_param(3) == "Consumption"
+
+    def test_string_2_returns_backstream(self):
+        assert _map_meter_kind_to_remote_reading_param("2") == "Backstream"
+
+    def test_string_1_returns_consumption(self):
+        assert _map_meter_kind_to_remote_reading_param("1") == "Consumption"
 
     def test_enum_like(self):
         obj = MagicMock()
         obj.value = "צריכה"
         assert _map_meter_kind_to_remote_reading_param(obj) == "Consumption"
+
+    def test_enum_like_with_numeric_value(self):
+        obj = MagicMock()
+        obj.value = 2
+        assert _map_meter_kind_to_remote_reading_param(obj) == "Backstream"
 
 
 class TestBuildBackstreamTotals:
@@ -86,6 +127,64 @@ class TestBuildBackstreamTotals:
         info.total_export = 200.0
         result = _build_backstream_totals(info)
         assert result == {"total_back_stream_for_period": 100.0, "total_export": 200.0}
+
+
+class TestNeedsFutureConsumptionFallback:
+    def _future_info(self, consumption=100.0):
+        info = MagicMock(spec=FutureConsumptionInfo)
+        info.future_consumption = consumption
+        return info
+
+    def test_missing_future_consumption_returns_true(self):
+        assert _needs_future_consumption_fallback({}, {}, {}, "m1") is True
+
+    def test_none_future_consumption_returns_true(self):
+        assert _needs_future_consumption_fallback({"m1": None}, {}, {}, "m1") is True
+
+    def test_consumption_meter_with_data_returns_false(self):
+        future_consumption = {"m1": self._future_info()}
+        assert (
+            _needs_future_consumption_fallback(
+                future_consumption,
+                {"m1": False},
+                {"m1": {"total_export": 0.0}},
+                "m1",
+            )
+            is False
+        )
+
+    def test_backstream_meter_zero_export_returns_true(self):
+        future_consumption = {"m1": self._future_info()}
+        assert (
+            _needs_future_consumption_fallback(
+                future_consumption,
+                {"m1": True},
+                {"m1": {"total_export": 0.0}},
+                "m1",
+            )
+            is True
+        )
+
+    def test_backstream_meter_missing_totals_returns_true(self):
+        future_consumption = {"m1": self._future_info()}
+        assert (
+            _needs_future_consumption_fallback(
+                future_consumption, {"m1": True}, {}, "m1"
+            )
+            is True
+        )
+
+    def test_backstream_meter_with_real_export_returns_false(self):
+        future_consumption = {"m1": self._future_info()}
+        assert (
+            _needs_future_consumption_fallback(
+                future_consumption,
+                {"m1": True},
+                {"m1": {"total_export": 39225.556}},
+                "m1",
+            )
+            is False
+        )
 
 
 class TestSelectMeterData:
@@ -156,8 +255,10 @@ class TestParseInvoiceLastDate:
 class TestGetInvoiceReadingDates:
     """Contract: the reading window derives from the most recent PAST invoice.
 
-    Invoices whose lastDate is in the future are ignored; the from_date is the
-    to_date of the next older invoice (or today when none exists).
+    Invoices whose fullDate is in the future are ignored; the from_date is the
+    to_date of the next older invoice (or today when none exists). The
+    last_invoice_date sent to IEC is fullDate + 1 day, which is the only value
+    that returns real (non-zeroed) export data for the current period.
     """
 
     def test_empty_invoices(self):
@@ -169,59 +270,59 @@ class TestGetInvoiceReadingDates:
     @freeze_time("2024-06-15")
     def test_single_invoice_current(self):
         invoice = MagicMock()
-        invoice.last_date = "10/06/2024"
+        invoice.full_date = datetime(2024, 6, 1)
         invoice.to_date = datetime(2024, 6, 10)
         last_date, from_date = _get_invoice_reading_dates([invoice])
-        assert last_date == datetime(2024, 6, 10, 0, 0)
+        assert last_date == datetime(2024, 6, 2, 0, 0)
         assert from_date == datetime(2024, 6, 15, 0, 0)
 
     @freeze_time("2024-03-15")
     def test_future_invoice_skipped(self):
         future = MagicMock()
-        future.last_date = "20/06/2024"
+        future.full_date = datetime(2024, 7, 1)
         current = MagicMock()
-        current.last_date = "10/03/2024"
+        current.full_date = datetime(2024, 3, 1)
         current.to_date = datetime(2024, 3, 10)
         last_date, from_date = _get_invoice_reading_dates([future, current])
-        assert last_date == datetime(2024, 3, 10, 0, 0)
+        assert last_date == datetime(2024, 3, 2, 0, 0)
         assert from_date == datetime(2024, 3, 15, 0, 0)
 
     @freeze_time("2024-06-15")
     def test_only_future_invoices_return_none(self):
         """Contract: invoices entirely in the future yield no reading window."""
         future1 = MagicMock()
-        future1.last_date = "20/06/2024"
+        future1.full_date = datetime(2024, 7, 1)
         future2 = MagicMock()
-        future2.last_date = "25/06/2024"
+        future2.full_date = datetime(2024, 7, 5)
         assert _get_invoice_reading_dates([future1, future2]) == (None, None)
 
     @freeze_time("2024-06-15")
     def test_only_past_invoices_uses_most_recent(self):
         """Contract: the most recent past invoice sets the window start."""
         older = MagicMock()
-        older.last_date = "01/01/2024"
+        older.full_date = datetime(2024, 1, 1)
         older.to_date = datetime(2024, 1, 1)
         newer = MagicMock()
-        newer.last_date = "01/06/2024"
+        newer.full_date = datetime(2024, 6, 1)
         newer.to_date = datetime(2024, 6, 1)
         last_date, from_date = _get_invoice_reading_dates([older, newer])
-        assert last_date == datetime(2024, 6, 1, 0, 0)
+        assert last_date == datetime(2024, 6, 2, 0, 0)
         # from_date comes from the next older invoice's to_date.
         assert from_date == datetime(2024, 1, 1, 0, 0)
 
     @freeze_time("2024-06-15")
-    def test_mixed_ordering_is_sorted_by_last_date(self):
-        """Contract: input order must not matter; sorted by lastDate desc."""
+    def test_mixed_ordering_is_sorted_by_full_date(self):
+        """Contract: input order must not matter; sorted by fullDate desc."""
         newest = MagicMock()
-        newest.last_date = "10/06/2024"
+        newest.full_date = datetime(2024, 6, 1)
         oldest = MagicMock()
-        oldest.last_date = "10/01/2024"
+        oldest.full_date = datetime(2024, 1, 1)
         middle = MagicMock()
-        middle.last_date = "10/04/2024"
+        middle.full_date = datetime(2024, 4, 1)
         middle.to_date = datetime(2024, 4, 10)
         # Unsorted input on purpose
         last_date, from_date = _get_invoice_reading_dates([oldest, newest, middle])
-        assert last_date == datetime(2024, 6, 10, 0, 0)
+        assert last_date == datetime(2024, 6, 2, 0, 0)
         assert from_date == datetime(2024, 4, 10, 0, 0)
 
     @freeze_time("2024-06-15")
@@ -232,12 +333,12 @@ class TestGetInvoiceReadingDates:
         is still open; the function must fall back to today instead of raising.
         """
         current = MagicMock()
-        current.last_date = "10/03/2024"
+        current.full_date = datetime(2024, 3, 1)
         next_invoice = MagicMock()
-        next_invoice.last_date = "10/02/2024"
+        next_invoice.full_date = datetime(2024, 2, 1)
         next_invoice.to_date = None
         last_date, from_date = _get_invoice_reading_dates([current, next_invoice])
-        assert last_date == datetime(2024, 3, 10, 0, 0)
+        assert last_date == datetime(2024, 3, 2, 0, 0)
         assert from_date == datetime(2024, 6, 15, 0, 0)  # falls back to today
 
 
@@ -336,7 +437,16 @@ class TestCalculateEstimatedBill:
             last_invoice=MagicMock(),
         )
         assert len(result) == 8
-        total_est, fixed, consumption_price, days, delivery, distribution, kva, fut_cons = result
+        (
+            total_est,
+            fixed,
+            consumption_price,
+            days,
+            delivery,
+            distribution,
+            kva,
+            fut_cons,
+        ) = result
         assert days >= 1
         assert isinstance(total_est, float)
         assert isinstance(consumption_price, float)
@@ -355,7 +465,16 @@ class TestCalculateEstimatedBill:
             power_size=25.0,
             last_invoice=EMPTY_INVOICE,
         )
-        total_est, fixed, consumption_price, days, delivery, distribution, kva, fut_cons = result
+        (
+            total_est,
+            fixed,
+            consumption_price,
+            days,
+            delivery,
+            distribution,
+            kva,
+            fut_cons,
+        ) = result
         assert isinstance(total_est, float)
 
     @freeze_time("2024-06-15")
@@ -463,7 +582,16 @@ class TestCalculateEstimatedBill:
             power_size=25.0,
             last_invoice=EMPTY_INVOICE,
         )
-        total_est, fixed, consumption_price, days, delivery, distribution, kva, fut_cons = result
+        (
+            total_est,
+            fixed,
+            consumption_price,
+            days,
+            delivery,
+            distribution,
+            kva,
+            fut_cons,
+        ) = result
         assert fut_cons == 0.0
         assert consumption_price == 0.0
         assert days == 15  # frozen at 2024-06-15
@@ -472,3 +600,39 @@ class TestCalculateEstimatedBill:
         assert delivery == pytest.approx(10.0)
         assert fixed == pytest.approx(35.27)
         assert total_est == pytest.approx(35.27)
+
+
+class TestFutureConsumptionCandidateDates:
+    def test_returns_five_candidates_newest_first(self):
+        candidates = _future_consumption_candidate_dates(datetime(2026, 8, 10))
+        assert [resolution for _, resolution in candidates] == [
+            ReadingResolution.DAILY,
+            ReadingResolution.DAILY,
+            ReadingResolution.DAILY,
+            ReadingResolution.WEEKLY,
+            ReadingResolution.MONTHLY,
+        ]
+
+    def test_daily_candidates_are_last_three_days(self):
+        candidates = _future_consumption_candidate_dates(datetime(2026, 8, 10))
+        assert [req_date for req_date, _ in candidates[:3]] == [
+            datetime(2026, 8, 10),
+            datetime(2026, 8, 9),
+            datetime(2026, 8, 8),
+        ]
+
+    def test_monday_weekly_candidate_is_previous_sunday(self):
+        candidates = _future_consumption_candidate_dates(datetime(2026, 8, 10))
+        assert candidates[3] == (datetime(2026, 8, 9), ReadingResolution.WEEKLY)
+
+    def test_sunday_weekly_candidate_is_two_sundays_ago(self):
+        candidates = _future_consumption_candidate_dates(datetime(2026, 8, 9))
+        assert candidates[3] == (datetime(2026, 8, 2), ReadingResolution.WEEKLY)
+
+    def test_non_first_of_month_monthly_candidate_is_current_month_first(self):
+        candidates = _future_consumption_candidate_dates(datetime(2026, 8, 9))
+        assert candidates[4] == (datetime(2026, 8, 1), ReadingResolution.MONTHLY)
+
+    def test_first_of_month_monthly_candidate_is_previous_month_first(self):
+        candidates = _future_consumption_candidate_dates(datetime(2026, 8, 1))
+        assert candidates[4] == (datetime(2026, 7, 1), ReadingResolution.MONTHLY)

@@ -13,6 +13,7 @@ from typing import Any
 from iec_api.models.remote_reading import (
     FutureConsumptionInfo,
     MeterReadingData,
+    ReadingResolution,
     RemoteReadingResponse,
 )
 
@@ -22,45 +23,49 @@ from .const import EMPTY_INVOICE
 _LOGGER = logging.getLogger(__name__)
 
 
-def _is_backstream_meter_kind(meter_kind: Any) -> bool:
-    """Return whether the IEC meter kind represents bidirectional export."""
-    if meter_kind is None:
-        return False
+def _map_meter_kind_to_remote_reading_param(meter_kind: Any) -> str:
+    """Translate IEC meter kind to the expected parameter for remote reading API.
 
-    if isinstance(meter_kind, int):
-        return meter_kind == 2
+    Only "Consumption" and "Backstream" are valid API parameters. Hebrew and
+    English inputs are normalized to these two options; the numeric values
+    returned by the API (1 = Consumption, 2 = Backstream) are translated the
+    same way. Unknown values default to "Consumption".
+    """
+    if meter_kind is None:
+        return ""
 
     normalized = str(
         meter_kind.value if hasattr(meter_kind, "value") else meter_kind
     ).strip()
+
     if not normalized:
-        return False
+        return ""
 
     if normalized.isdigit():
-        return int(normalized) == 2
-
-    lowered = normalized.lower()
-    return lowered in {"backstream", "דו כיווני"}
-
-
-def _map_meter_kind_to_remote_reading_param(meter_kind: Any) -> str:
-    """Translate IEC meter kind to the expected parameter for remote reading API."""
-    if meter_kind is None:
-        return ""
-
-    normalized = str(
-        meter_kind.value if hasattr(meter_kind, "value") else meter_kind
-    ).strip()
-
-    if not normalized:
-        return ""
+        return "Backstream" if int(normalized) == 2 else "Consumption"
 
     METER_KIND_MAPPING = {
         "צריכה": "Consumption",
-        "דו כיווני": "BackStream",
+        "דו כיווני": "Backstream",
+        "דו-כיווני": "Backstream",
     }
 
-    return METER_KIND_MAPPING.get(normalized, normalized)
+    mapped = METER_KIND_MAPPING.get(normalized)
+    if mapped is not None:
+        return mapped
+
+    lowered = normalized.lower()
+    if lowered == "consumption":
+        return "Consumption"
+    if lowered == "backstream":
+        return "Backstream"
+
+    return "Consumption"
+
+
+def _is_backstream_meter_kind(meter_kind: Any) -> bool:
+    """Return whether the IEC meter kind represents bidirectional export."""
+    return _map_meter_kind_to_remote_reading_param(meter_kind) == "Backstream"
 
 
 def _build_backstream_totals(
@@ -76,6 +81,50 @@ def _build_backstream_totals(
         "total_back_stream_for_period": future_info.future_back_stream,
         "total_export": future_info.total_export,
     }
+
+
+def _needs_future_consumption_fallback(
+    future_consumption: dict[str, FutureConsumptionInfo | None],
+    backstream_meters: dict[str, bool],
+    backstream_totals: dict[str, dict[str, float | None]],
+    device_number: str,
+) -> bool:
+    """Return whether a fallback reading window is needed for future consumption.
+
+    The IEC API returns zeroed backstream fields in the current month's monthly
+    aggregation even for bidirectional meters, so a backstream meter whose
+    monthly export came back empty must fall back to another reading window.
+    """
+    if not future_consumption.get(device_number):
+        return True
+    return bool(
+        backstream_meters.get(device_number)
+        and not backstream_totals.get(device_number, {}).get("total_export")
+    )
+
+
+def _future_consumption_candidate_dates(
+    today: datetime,
+) -> list[tuple[datetime, ReadingResolution]]:
+    """Return fallback windows to probe for future consumption data, newest first.
+
+    The IEC API does not always publish export data for the current period, so
+    progressively older windows are probed: the last three days, then the most
+    recent completed week (last Sunday; two Sundays ago when today is Sunday),
+    then the first of the current month (or the first of the previous month
+    when today is the first).
+    """
+    last_sunday = today - timedelta(days=today.weekday() + 1)
+    first_of_month = today.replace(day=1)
+    if today.day == 1:
+        first_of_month = (first_of_month - timedelta(days=1)).replace(day=1)
+    return [
+        (today, ReadingResolution.DAILY),
+        (today - timedelta(days=1), ReadingResolution.DAILY),
+        (today - timedelta(days=2), ReadingResolution.DAILY),
+        (last_sunday, ReadingResolution.WEEKLY),
+        (first_of_month, ReadingResolution.MONTHLY),
+    ]
 
 
 def _select_meter_data(
@@ -131,8 +180,12 @@ def _get_invoice_reading_dates(
     """Get the last invoice date and from date for RemoteReadingRange API call.
 
     Returns: (last_invoice_date, from_date) tuple.
-    - last_invoice_date: The lastDate of the most recent invoice where lastDate <= today.
-    - from_date: The toDate of the next invoice after that (or today if none exists).
+    - last_invoice_date: The day after the most recent invoice's fullDate
+      (full_date + 1 day), where full_date <= today. IEC only returns real
+      (non-zeroed) export data for the current period when lastInvoiceDate is
+      set to this value; sending the period start zeroes it out.
+    - from_date: The toDate of the next invoice after that (or today if none
+      exists).
     """
     if not invoices:
         return None, None
@@ -141,7 +194,7 @@ def _get_invoice_reading_dates(
 
     sorted_invoices = sorted(
         invoices,
-        key=lambda inv: _parse_invoice_last_date(inv.last_date) or date.min,
+        key=lambda inv: inv.full_date.date() if inv.full_date else date.min,
         reverse=True,
     )
 
@@ -149,9 +202,11 @@ def _get_invoice_reading_dates(
     from_date_obj = None
 
     for i, invoice in enumerate(sorted_invoices):
-        parsed_last_date = _parse_invoice_last_date(invoice.last_date)
-        if parsed_last_date and parsed_last_date <= today:
-            last_invoice_date_obj = datetime.combine(parsed_last_date, time.min)
+        full_date = invoice.full_date
+        if full_date and full_date.date() <= today:
+            last_invoice_date_obj = datetime.combine(
+                full_date.date() + timedelta(days=1), time.min
+            )
             if i + 1 < len(sorted_invoices):
                 to_date = sorted_invoices[i + 1].to_date
                 if isinstance(to_date, datetime):
