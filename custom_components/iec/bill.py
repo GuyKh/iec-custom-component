@@ -18,7 +18,7 @@ from iec_api.models.remote_reading import (
 )
 
 from .commons import TIMEZONE
-from .const import EMPTY_INVOICE
+from .const import ELECTRIC_INVOICE_DOC_ID, EMPTY_INVOICE
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -223,6 +223,31 @@ def _get_invoice_reading_dates(
             break
 
     return (last_invoice_date_obj, from_date_obj)
+
+
+def select_last_electric_invoice(
+    invoices: list,
+) -> tuple[Any, datetime | None, datetime | None]:
+    """Select the most recent electric invoice from a billing-invoice list.
+
+    Filters by ELECTRIC_INVOICE_DOC_ID and sorts by full_date, most recent
+    first. Falls back to (EMPTY_INVOICE, None, None) when no electric
+    invoice is present.
+    """
+    if not invoices:
+        return EMPTY_INVOICE, None, None
+
+    electric_invoices = [
+        inv for inv in invoices if inv.document_id == ELECTRIC_INVOICE_DOC_ID
+    ]
+    if not electric_invoices:
+        return EMPTY_INVOICE, None, None
+
+    electric_invoices.sort(key=lambda inv: inv.full_date or datetime.min, reverse=True)
+    last_invoice = electric_invoices[0]
+
+    last_invoice_date, from_date = _get_invoice_reading_dates(electric_invoices)
+    return last_invoice, last_invoice_date, from_date
 
 
 def _extract_valid_future_consumption(

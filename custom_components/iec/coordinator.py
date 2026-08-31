@@ -36,10 +36,10 @@ from .bill import (
     _calculate_estimated_bill,
     _extract_valid_future_consumption,
     _future_consumption_candidate_dates,
-    _get_invoice_reading_dates,
     _is_backstream_meter_kind,
     _needs_future_consumption_fallback,
     _select_meter_data,
+    select_last_electric_invoice,
 )
 from .commons import TIMEZONE
 from .const import (
@@ -474,26 +474,19 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     _LOGGER.exception("Failed fetching invoices", e)
                     billing_invoices = None
 
-            if (
-                billing_invoices
-                and billing_invoices.invoices
-                and len(billing_invoices.invoices) > 0
-            ):
-                billing_invoices.invoices = list(
-                    filter(
-                        lambda inv: inv.document_id == ELECTRIC_INVOICE_DOC_ID,
-                        billing_invoices.invoices,
+            if billing_invoices and billing_invoices.invoices:
+                (
+                    last_invoice,
+                    last_invoice_date,
+                    from_date,
+                ) = select_last_electric_invoice(billing_invoices.invoices)
+                if last_invoice is EMPTY_INVOICE:
+                    _LOGGER.warning(
+                        "No invoices with document_id=%s for contract %s; "
+                        "using EMPTY_INVOICE fallback.",
+                        ELECTRIC_INVOICE_DOC_ID,
+                        contract_id,
                     )
-                )
-                # Get the reading dates based on invoice data
-                last_invoice_date, from_date = _get_invoice_reading_dates(
-                    billing_invoices.invoices
-                )
-                # Keep the first invoice (most recent by full_date) for other uses
-                billing_invoices.invoices.sort(
-                    key=lambda inv: inv.full_date or datetime.min, reverse=True
-                )
-                last_invoice = billing_invoices.invoices[0]
             else:
                 last_invoice = EMPTY_INVOICE
                 last_invoice_date = None
