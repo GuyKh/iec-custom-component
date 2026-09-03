@@ -41,7 +41,7 @@ from .bill import (
     _select_meter_data,
     select_last_electric_invoice,
 )
-from .commons import TIMEZONE
+from .commons import TIMEZONE, find_reading_by_date
 from .const import (
     ACCESS_TOKEN_EXPIRATION_TIME,
     ACCESS_TOKEN_ISSUED_AT,
@@ -81,6 +81,11 @@ from .data_fetcher import IecDataFetcher
 from .statistics import insert_statistics
 
 _LOGGER = logging.getLogger(__name__)
+
+# IEC can take a few days to publish a given day's smart-meter readings, so
+# each cycle we also re-check the past week for any day that's still missing
+# data (not just today), and backfill it via DAILY resolution once it appears.
+_DAILY_BACKFILL_LOOKBACK_DAYS = 7
 
 
 async def _probe_future_consumption(
@@ -393,6 +398,35 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
         return self._default_account_id
 
+    async def _backfill_missing_recent_days(
+        self,
+        daily_readings: dict[str, list[PeriodConsumption]],
+        device: Any,
+        contract_id: int,
+        last_invoice_date: datetime | None,
+        localized_today: datetime,
+    ) -> None:
+        """Backfill any of the past week's days IEC hadn't published yet.
+
+        Skips days that already have data (e.g. from the WEEKLY/MONTHLY fetch)
+        to avoid needless API calls; only re-checks genuinely missing days.
+        """
+        for days_back in range(1, _DAILY_BACKFILL_LOOKBACK_DAYS + 1):
+            backfill_date = (localized_today - timedelta(days=days_back)).date()
+            if any(
+                find_reading_by_date(reading, backfill_date)
+                for reading in daily_readings[device.device_number]
+            ):
+                continue
+            await self._fetcher._verify_daily_readings_exist(
+                daily_readings,
+                backfill_date,
+                device,
+                contract_id,
+                None,
+                last_invoice_date,
+            )
+
     async def _update_data(
         self,
     ) -> dict[str, dict[str, Any]]:
@@ -632,7 +666,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                             "total_export": None,
                         }
 
-                    # Verify today's date appears
+                    # Verify today's date appears, always refreshing it since
+                    # it's a running total that grows through the day.
                     await self._fetcher._verify_daily_readings_exist(
                         daily_readings,
                         localized_today.date(),
@@ -640,6 +675,14 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                         contract_id,
                         None,
                         last_invoice_date,
+                    )
+
+                    await self._backfill_missing_recent_days(
+                        daily_readings,
+                        device,
+                        contract_id,
+                        last_invoice_date,
+                        localized_today,
                     )
 
                     today_reading_key = str(contract_id) + "-" + device.device_number
