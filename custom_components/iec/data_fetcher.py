@@ -31,7 +31,7 @@ from iec_api.models.remote_reading import (
 )
 
 from .bill import _map_meter_kind_to_remote_reading_param, _select_meter_data
-from .commons import find_reading_by_date
+from .commons import find_reading_by_date, localize_datetime
 from .const import CONF_BP_NUMBER, CONF_BP_NUMBER_TO_CONTRACT
 
 _LOGGER = logging.getLogger(__name__)
@@ -525,90 +525,58 @@ class IecDataFetcher:
         prefetched_reading: RemoteReadingResponse | None = None,
         last_invoice_date: datetime | None = None,
     ):
-        """Verify daily readings exist and fetch if missing."""
+        """Ensure daily_readings has a fresh, summed entry for desired_date."""
         if not device.device_number:
             return
 
-        if not daily_readings.get(device.device_number):
-            daily_readings[device.device_number] = []
+        daily_readings.setdefault(device.device_number, [])
 
-        daily_reading = next(
-            filter(
-                lambda x: find_reading_by_date(x, desired_date),
-                daily_readings[device.device_number],
-            ),
-            None,
-        )
-        if not daily_reading:
-            _LOGGER.debug(
-                "Daily reading for date: %s is missing, calculating manually",
-                desired_date.strftime("%Y-%m-%d"),
-            )
-            readings = prefetched_reading
-            if not readings:
-                readings = await self._get_readings(
-                    contract_id,
-                    device.device_number,
-                    device.device_code,
-                    datetime.fromordinal(desired_date.toordinal()),
-                    ReadingResolution.DAILY,
-                    device.meter_kind,
-                    last_invoice_date,
-                )
-            else:
-                _LOGGER.debug(
-                    "Daily reading for date: %s - using existing prefetched readings",
-                    desired_date.strftime("%Y-%m-%d"),
-                )
-
-            matched_meter = _select_meter_data(
-                readings,
+        readings = prefetched_reading
+        if not readings:
+            readings = await self._get_readings(
+                contract_id,
                 device.device_number,
                 device.device_code,
+                datetime.fromordinal(desired_date.toordinal()),
+                ReadingResolution.DAILY,
+                device.meter_kind,
+                last_invoice_date,
             )
-            if matched_meter:
-                daily_readings[device.device_number] += (
-                    matched_meter.period_consumptions
-                )
 
-                daily_readings[device.device_number] = list(
-                    dict.fromkeys(daily_readings[device.device_number])
-                )
+        matched_meter = _select_meter_data(
+            readings,
+            device.device_number,
+            device.device_code,
+        )
+        if not matched_meter:
+            return
 
-                daily_readings[device.device_number].sort(key=lambda x: x.interval)
-
-                desired_date_reading = next(
-                    filter(
-                        lambda reading: reading.interval.date() == desired_date,
-                        matched_meter.period_consumptions,
-                    ),
-                    None,
-                )
-                if (
-                    desired_date_reading is None
-                    or desired_date_reading.consumption <= 0
-                ):
-                    _LOGGER.debug(
-                        "Couldn't find daily reading for: %s",
-                        desired_date.strftime("%Y-%m-%d"),
-                    )
-                else:
-                    daily_readings[device.device_number].append(
-                        PeriodConsumption(
-                            status=0,
-                            interval=datetime.combine(
-                                desired_date, datetime.min.time()
-                            ),
-                            consumption=desired_date_reading.consumption,
-                            back_stream=0,
-                        )
-                    )
-        else:
+        matching = [
+            pc
+            for pc in matched_meter.period_consumptions
+            if pc.interval.date() == desired_date
+        ]
+        if not matching:
             _LOGGER.debug(
-                "Daily reading for date: %s is present: %s",
-                daily_reading.interval.strftime("%Y-%m-%d"),
-                daily_reading.consumption,
+                "No DAILY-resolution readings yet for %s",
+                desired_date.strftime("%Y-%m-%d"),
             )
+            return
+
+        today_summary = PeriodConsumption(
+            status=0,
+            interval=localize_datetime(
+                datetime.combine(desired_date, datetime.min.time())
+            ),
+            consumption=sum(pc.consumption for pc in matching),
+            back_stream=sum(pc.back_stream for pc in matching),
+        )
+        daily_readings[device.device_number] = [
+            reading
+            for reading in daily_readings[device.device_number]
+            if not find_reading_by_date(reading, desired_date)
+        ] + [today_summary]
+        daily_readings[device.device_number].sort(key=lambda x: x.interval)
 
     def clear_per_cycle_caches(self) -> None:
         """Clear all per-update-cycle caches. Called after each update cycle."""
