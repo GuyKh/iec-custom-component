@@ -294,62 +294,6 @@ async def insert_statistics(
                 reading.back_stream or 0 for reading in group_list
             )
 
-        if not readings_by_hour and last_stat_time:
-            attempted_local = from_date.astimezone(TIMEZONE)
-            if attempted_local.date() < localized_today.date():
-                month_anchor = localize_datetime(
-                    datetime.combine(
-                        attempted_local.date().replace(day=1),
-                        datetime.min.time(),
-                    )
-                )
-                monthly = await fetcher._get_readings(
-                    contract_id,
-                    device.device_number,
-                    device.device_code,
-                    month_anchor,
-                    ReadingResolution.MONTHLY,
-                    device.meter_kind,
-                )
-                daily_pc = next(
-                    (
-                        pc
-                        for pc in (
-                            monthly.meter_list[0].period_consumptions
-                            if monthly and monthly.meter_list
-                            else []
-                        )
-                        if pc.interval.astimezone(TIMEZONE).date()
-                        == attempted_local.date()
-                    ),
-                    None,
-                )
-                if daily_pc is not None:
-                    daily_kwh = daily_pc.consumption or 0.0
-                    daily_back = daily_pc.back_stream or 0.0
-                    base_dt = localize_datetime(
-                        datetime.combine(attempted_local.date(), datetime.min.time())
-                    )
-                    for h in range(24):
-                        hour_key = base_dt + timedelta(hours=h)
-                        if hour_key <= last_stat_req_hour:
-                            continue
-                        readings_by_hour[hour_key] = daily_kwh / 24
-                        backstream_by_hour[hour_key] = daily_back / 24
-                    _LOGGER.debug(
-                        "[IEC Statistics] DAILY for %s was "
-                        "incomplete; synthesized 24 hourly entries from MONTHLY "
-                        "aggregate (%s kWh)",
-                        attempted_local.date(),
-                        daily_kwh,
-                    )
-                else:
-                    _LOGGER.debug(
-                        "[IEC Statistics] No MONTHLY aggregate available for %s; "
-                        "cannot advance past it",
-                        attempted_local.date(),
-                    )
-
         consumption_metadata: StatisticMetaData = {
             "has_mean": False,
             "has_sum": True,
