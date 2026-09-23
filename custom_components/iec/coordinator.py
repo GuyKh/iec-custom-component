@@ -36,6 +36,7 @@ from .bill import (
     _calculate_estimated_bill,
     _extract_valid_future_consumption,
     _future_consumption_candidate_dates,
+    _is_backstream_meter_kind,
     _needs_future_consumption_fallback,
     _select_meter_data,
     select_last_electric_invoice,
@@ -561,22 +562,13 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                         ):
                             actual_reading_date = from_date
 
-                    # Request Backstream for monthly readings if contract has producerType=1
-                    # (indicates production capability). The API response will contain
-                    # export data only if the meter actually produces.
-                    is_producer_contract = getattr(contract, "producer_type", 0) == 1
-                    request_meter_kind = "Backstream" if (
-                        reading_type == ReadingResolution.MONTHLY
-                        and is_producer_contract
-                    ) else device.meter_kind
-
                     remote_reading = await self._fetcher._get_readings(
                         contract_id,
                         device.device_number,
                         device.device_code,
                         actual_reading_date,
                         reading_type,
-                        request_meter_kind,
+                        device.meter_kind,
                         actual_last_invoice_date,
                     )
                     if (
@@ -614,10 +606,14 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                             future_consumption[device.device_number] = (
                                 monthly_future_consumption
                             )
-                        # Use contract's producer_type to determine backstream capability.
-                        # The API response meterKind flips between 1 and 2 depending
-                        # on the queried period, so it is not a reliable indicator.
-                        backstream_meters[device.device_number] = is_producer_contract
+                        # Classify from the request-side kind (contract's
+                        # private-producer flag). The response `meterKind`
+                        # flips between 1 and 2 for the same meter depending
+                        # on the queried period, so it is not a reliable
+                        # indicator of a bidirectional meter.
+                        backstream_meters[device.device_number] = (
+                            _is_backstream_meter_kind(device.meter_kind)
+                        )
                         backstream_totals[device.device_number] = (
                             _build_backstream_totals(monthly_future_consumption)
                         )
