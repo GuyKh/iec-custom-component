@@ -116,7 +116,6 @@ class IecDataFetcher:
                 api_devices: list[Device] | None = await self._api_call(
                     self.api.get_devices(contract_id_normalized)
                 )
-                meter_kind = await self._get_meter_kind_for_contract(contract_id)
                 devices = []
                 for device in api_devices or []:
                     if not device.device_number or not device.device_code:
@@ -133,7 +132,7 @@ class IecDataFetcher:
                             device_type=device.device_type or 0,
                             device_number=device.device_number,
                             device_code=device.device_code,
-                            meter_kind=meter_kind,
+                            meter_kind="Consumption",
                         )
                     )
                 self._devices_by_contract_id[contract_id] = devices
@@ -144,38 +143,6 @@ class IecDataFetcher:
                 )
                 devices = []
         return devices or []
-
-    async def _get_meter_kind_for_contract(self, contract_id: int) -> str:
-        """Return the remote reading meter kind for a contract.
-
-        Private producers (e.g. solar) have bidirectional meters, so their
-        readings must be requested with "Backstream" to get export data.
-        Falls back to "Consumption" when the producer status is unknown.
-        """
-        bp_number = self._get_bp_number_for_contract(contract_id)
-        if not bp_number:
-            return "Consumption"
-
-        contracts = self._contracts_by_bp_number.get(bp_number, _MISSING)
-        if contracts is _MISSING:
-            try:
-                contracts = await self._api_call(
-                    self.api.get_contracts(bp_number)
-                )
-            except IECError:
-                _LOGGER.exception(
-                    "Failed fetching contracts for BP number %s",
-                    bp_number,
-                )
-                contracts = []
-            self._contracts_by_bp_number[bp_number] = contracts
-
-        for contract in contracts or []:
-            if contract.contract_id and int(contract.contract_id) == contract_id:
-                return (
-                    "Backstream" if contract.from_private_producer else "Consumption"
-                )
-        return "Consumption"
 
     def _get_bp_number_for_contract(self, contract_id: int) -> str | None:
         """Return the BP number associated with a contract id."""
