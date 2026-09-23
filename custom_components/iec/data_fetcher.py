@@ -148,9 +148,9 @@ class IecDataFetcher:
     async def _get_meter_kind_for_contract(self, contract_id: int) -> str:
         """Return the remote reading meter kind for a contract.
 
-        Private producers (e.g. solar) have bidirectional meters, so their
-        readings must be requested with "Backstream" to get export data.
-        Falls back to "Consumption" when the producer status is unknown.
+        Contracts with producer_type=1 have bidirectional meters (solar/backstream),
+        so their readings must be requested with "Backstream" to get export data.
+        Falls back to "Consumption" when the producer type is not 1.
         """
         bp_number = self._get_bp_number_for_contract(contract_id)
         if not bp_number:
@@ -173,7 +173,7 @@ class IecDataFetcher:
         for contract in contracts or []:
             if contract.contract_id and int(contract.contract_id) == contract_id:
                 return (
-                    "Backstream" if contract.from_private_producer else "Consumption"
+                    "Backstream" if contract.producer_type == 1 else "Consumption"
                 )
         return "Consumption"
 
