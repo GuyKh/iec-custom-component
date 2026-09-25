@@ -2,7 +2,7 @@
 
 import itertools
 import logging
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from homeassistant.components.recorder import get_instance
 from homeassistant.components.recorder.models import (
@@ -18,7 +18,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfEnergy
 from homeassistant.core import HomeAssistant
 from homeassistant.util.unit_conversion import EnergyConverter
-from iec_api.models.remote_reading import ReadingResolution
+from iec_api.models.remote_reading import PeriodConsumption, ReadingResolution
 
 from .commons import TIMEZONE, localize_datetime
 from .const import DOMAIN, ILS
@@ -382,3 +382,95 @@ async def insert_statistics(
         )
         async_add_external_statistics(hass, cost_metadata, cost_statistics)
         async_add_external_statistics(hass, production_metadata, production_statistics)
+
+
+def _hours_in_day(day: date) -> int:
+    """Count the local hours in a calendar day (23 or 25 across a DST switch)."""
+    day_start = localize_datetime(datetime.combine(day, datetime.min.time()))
+    next_day_start = localize_datetime(
+        datetime.combine(day + timedelta(days=1), datetime.min.time())
+    )
+    # Subtracting two datetimes that share a tzinfo is wall-clock arithmetic and
+    # would report 24 hours even across a DST switch, so compare timestamps.
+    return round((next_day_start.timestamp() - day_start.timestamp()) / 3600)
+
+
+def _sum_hourly_states_by_day(rows: list) -> dict[date, tuple[int, float]]:
+    """Fold hourly statistics rows into (hours recorded, total) per local day."""
+    by_day: dict[date, tuple[int, float]] = {}
+    for row in rows:
+        day = datetime.fromtimestamp(row["start"], tz=TIMEZONE).date()
+        hours, total = by_day.get(day, (0, 0.0))
+        by_day[day] = (hours + 1, total + (row.get("state") or 0.0))
+    return by_day
+
+
+async def async_get_recorded_daily_totals(
+    hass: HomeAssistant,
+    device_number: str,
+    start: datetime,
+    end: datetime,
+) -> dict[date, PeriodConsumption]:
+    """Return the day totals Home Assistant already holds for a meter.
+
+    Reads back the hourly statistics this integration writes, so a day whose
+    readings are already in the recorder can be rebuilt locally instead of
+    being fetched from IEC again.
+
+    Only days with a full set of hourly rows are returned: a day with gaps is
+    one IEC was still filling in when it was recorded, and re-fetching it is
+    exactly what the caller is there to do.
+    """
+    id_prefix = f"iec_meter_{device_number}"
+    consumption_statistic_id = f"{DOMAIN}:{id_prefix}_energy_consumption"
+    production_statistic_id = f"{DOMAIN}:{id_prefix}_energy_production"
+
+    try:
+        stats = await get_instance(hass).async_add_executor_job(
+            statistics_during_period,
+            hass,
+            start,
+            end,
+            {consumption_statistic_id, production_statistic_id},
+            "hour",
+            None,
+            {"state"},
+        )
+    except Exception as e:  # noqa: BLE001
+        # Deliberately broad: without the recorder (or with a failing one) the
+        # caller should simply fall back to fetching from IEC.
+        _LOGGER.debug(
+            "[IEC Statistics] Could not read back recorded statistics for meter %s: %s",
+            device_number,
+            e,
+        )
+        return {}
+
+    consumption_by_day = _sum_hourly_states_by_day(
+        stats.get(consumption_statistic_id) or []
+    )
+    production_by_day = _sum_hourly_states_by_day(
+        stats.get(production_statistic_id) or []
+    )
+
+    recorded: dict[date, PeriodConsumption] = {}
+    for day, (hours, consumption) in consumption_by_day.items():
+        expected_hours = _hours_in_day(day)
+        if hours < expected_hours:
+            _LOGGER.debug(
+                "[IEC Statistics] Meter %s has only %s of %s hours recorded for %s; "
+                "leaving it to be fetched",
+                device_number,
+                hours,
+                expected_hours,
+                day,
+            )
+            continue
+        _, back_stream = production_by_day.get(day, (0, 0.0))
+        recorded[day] = PeriodConsumption(
+            status=0,
+            interval=localize_datetime(datetime.combine(day, datetime.min.time())),
+            consumption=consumption,
+            back_stream=back_stream,
+        )
+    return recorded
