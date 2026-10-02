@@ -133,7 +133,7 @@ def _select_meter_data(
     device_code: str | int,
 ) -> MeterReadingData | None:
     """Select the meter payload matching the requested meter identity."""
-    if not reading or not reading.meter_list:
+    if not reading or not getattr(reading, "meter_list", None):
         return None
 
     requested_meter_id = str(device_id)
@@ -255,7 +255,7 @@ def _extract_valid_future_consumption(
     meter: MeterReadingData | None = None,
 ) -> FutureConsumptionInfo | None:
     """Return normalized future consumption data if the IEC payload is usable."""
-    if not reading or not reading.meter_list:
+    if not reading or not getattr(reading, "meter_list", None):
         return None
 
     meter = meter or reading.meter_list[0]
