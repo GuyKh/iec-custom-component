@@ -5,7 +5,7 @@ homeassistant==2026.2.0
 # pycares 5.0 removed at import time, crashing `import aiohttp` (homeassistant's
 # DNS resolver only catches ImportError). aiodns 4.x drops that annotation, so
 # pycares 5.x works once HA is >= 2026.2.0.
-pycares>=5.0.1,<5.1.0
+pycares>=5.1.0,<5.2.0
 iec-api==0.5.16
 mypy==2.4.0
 pip>=26.2.1
