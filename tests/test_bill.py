@@ -202,6 +202,9 @@ class TestSelectMeterData:
         reading.meter_list = []
         assert _select_meter_data(reading, "d1", "c1") is None
 
+    def test_object_without_meter_list_returns_none(self):
+        assert _select_meter_data(object(), "d1", "c1") is None
+
     def test_exact_match_returns_correct_meter(self):
         m1 = self._make_meter("S1", "C1")
         m2 = self._make_meter("S2", "C2")
@@ -368,6 +371,9 @@ class TestExtractValidFutureConsumption:
     def test_empty_meter_list(self):
         reading = self._make_reading(meters=[])
         assert _extract_valid_future_consumption(reading) is None
+
+    def test_object_without_meter_list(self):
+        assert _extract_valid_future_consumption(object()) is None
 
     def test_no_future_info(self):
         meter = self._make_meter(None)
