@@ -41,7 +41,7 @@ from .bill import (
     _select_meter_data,
     select_last_electric_invoice,
 )
-from .commons import TIMEZONE
+from .commons import TIMEZONE, find_reading_by_date, localize_datetime
 from .const import (
     ACCESS_TOKEN_EXPIRATION_TIME,
     ACCESS_TOKEN_ISSUED_AT,
@@ -78,9 +78,17 @@ from .const import (
 )
 
 from .data_fetcher import IecDataFetcher
-from .statistics import insert_statistics
+from .statistics import async_get_recorded_daily_totals, insert_statistics
 
 _LOGGER = logging.getLogger(__name__)
+
+# IEC publishes a day's smart-meter readings with a lag of a day or two, and
+# sometimes slower; Home Assistant being down for a while leaves an even wider
+# hole. So each cycle we re-check the past week for days missing from the
+# primary WEEKLY/MONTHLY response and pull them with a DAILY-resolution call.
+# The window is clamped to the start of the period that fetch covered, since
+# days before it feed no sensor (statistics fetch their own history).
+_DAILY_BACKFILL_LOOKBACK_DAYS = 7
 
 
 async def _probe_future_consumption(
@@ -393,6 +401,94 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
         return self._default_account_id
 
+    async def _backfill_missing_recent_days(
+        self,
+        daily_readings: dict[str, list[PeriodConsumption]],
+        device: Any,
+        contract_id: int,
+        last_invoice_date: datetime | None,
+        localized_today: datetime,
+        window_start: date,
+    ) -> None:
+        """Backfill recent days IEC hadn't published when the period was fetched.
+
+        Only days inside the lookback window and inside the period the primary
+        fetch covered (``window_start`` onwards) are considered, and days that
+        fetch already delivered are skipped outright. Whatever is still missing
+        is looked up in Home Assistant's own hourly statistics first - those
+        days were recorded from IEC data on an earlier run, so rebuilding them
+        locally is both free and exactly what a re-fetch would return.
+
+        Days Home Assistant has never recorded are walked oldest first and the
+        walk stops at the first one IEC returns nothing for, since IEC
+        publishes in order: if Sunday still isn't out, Monday certainly isn't
+        either. A cycle therefore spends at most one fruitless request, and
+        every further request it makes is one that returned data.
+        """
+        missing_dates: list[date] = []
+        for days_back in range(1, _DAILY_BACKFILL_LOOKBACK_DAYS + 1):
+            backfill_date = (localized_today - timedelta(days=days_back)).date()
+            if backfill_date < window_start:
+                break
+            if any(
+                find_reading_by_date(reading, backfill_date)
+                for reading in daily_readings[device.device_number]
+            ):
+                continue
+            missing_dates.append(backfill_date)
+
+        if not missing_dates:
+            return
+
+        recorded_totals = await async_get_recorded_daily_totals(
+            self.hass,
+            device.device_number,
+            localize_datetime(
+                datetime.combine(min(missing_dates), datetime.min.time())
+            ),
+            localize_datetime(
+                datetime.combine(
+                    max(missing_dates) + timedelta(days=1), datetime.min.time()
+                )
+            ),
+        )
+
+        from_recorder: list[PeriodConsumption] = []
+        # Oldest first: IEC publishes days in order, so once a fetch for the
+        # oldest still-missing day comes back empty, newer days are certain
+        # to be empty too and are left for a later cycle to retry.
+        for backfill_date in sorted(missing_dates):
+            recorded_total = recorded_totals.get(backfill_date)
+            if recorded_total is not None:
+                _LOGGER.debug(
+                    "Reusing recorded statistics for %s on device %s "
+                    "instead of fetching it again",
+                    backfill_date,
+                    device.device_number,
+                )
+                from_recorder.append(recorded_total)
+                continue
+
+            await self._fetcher._verify_daily_readings_exist(
+                daily_readings,
+                backfill_date,
+                device,
+                contract_id,
+                None,
+                last_invoice_date,
+            )
+            if not any(
+                find_reading_by_date(reading, backfill_date)
+                for reading in daily_readings[device.device_number]
+            ):
+                break
+
+        if from_recorder:
+            daily_readings[device.device_number] = sorted(
+                daily_readings[device.device_number] + from_recorder,
+                key=lambda reading: reading.interval,
+            )
+
     async def _update_data(
         self,
     ) -> dict[str, dict[str, Any]]:
@@ -632,7 +728,8 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                             "total_export": None,
                         }
 
-                    # Verify today's date appears
+                    # Verify today's date appears, always refreshing it since
+                    # it's a running total that grows through the day.
                     await self._fetcher._verify_daily_readings_exist(
                         daily_readings,
                         localized_today.date(),
@@ -640,6 +737,15 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                         contract_id,
                         None,
                         last_invoice_date,
+                    )
+
+                    await self._backfill_missing_recent_days(
+                        daily_readings,
+                        device,
+                        contract_id,
+                        last_invoice_date,
+                        localized_today,
+                        reading_date,
                     )
 
                     today_reading_key = str(contract_id) + "-" + device.device_number
