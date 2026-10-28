@@ -8,6 +8,5 @@ homeassistant==2026.2.0
 pycares>=5.2.0,<5.3.0
 iec-api==0.5.16
 mypy==2.4.0
-
 pip>=26.2.2
 ruff>=0.17.2
