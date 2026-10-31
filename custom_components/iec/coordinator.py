@@ -573,7 +573,7 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     )
                     if (
                         remote_reading
-                        and remote_reading.meter_list
+                        and getattr(remote_reading, "meter_list", None)
                         and len(remote_reading.meter_list) > 0
                     ):
                         meter = _select_meter_data(
