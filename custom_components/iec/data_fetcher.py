@@ -514,6 +514,7 @@ class IecDataFetcher:
                     reading_date.strftime("%d-%m-%Y"),
                     resolution,
                 )
+                reading = None
         return reading
 
     async def _verify_daily_readings_exist(
