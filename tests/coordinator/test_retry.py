@@ -6,8 +6,8 @@ and its integration in _async_update_data, so they pin down the documented contr
 - IECError codes 400/401 (expired/invalid token) are retried ONCE after a 5s delay,
   then raise ConfigEntryAuthFailed to trigger the reauth flow.
 - Any other IECError (e.g. 500) fails fast: no retry.
-- During the initial token load, non-auth errors propagate as IECError (no reauth).
-- During the token check, any IECError is converted to ConfigEntryAuthFailed.
+- During token load and check, non-auth errors raise UpdateFailed so HA retries.
+- Explicit IECLoginError failures still trigger reauthentication.
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -15,7 +15,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from homeassistant.const import CONF_API_TOKEN
 from homeassistant.exceptions import ConfigEntryAuthFailed
-from iec_api.models.exceptions import IECError
+from homeassistant.helpers.update_coordinator import UpdateFailed
+from iec_api.models.exceptions import IECError, IECLoginError
 
 from custom_components.iec.coordinator import IecApiCoordinator
 
@@ -66,7 +67,9 @@ class TestRetryHelper:
 
     @pytest.mark.asyncio
     async def test_auth_error_retries_once_then_succeeds(self):
-        operation = AsyncMock(side_effect=[IECError(400, "expired refresh token"), None])
+        operation = AsyncMock(
+            side_effect=[IECError(400, "expired refresh token"), None]
+        )
         coordinator = _make_coordinator()
 
         with patch(
@@ -136,11 +139,12 @@ class TestAsyncUpdateDataRetry:
         update_data.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_first_load_non_auth_error_propagates_raw(self):
+    @pytest.mark.parametrize("code", [-1, 429, 500, 503])
+    async def test_first_load_non_auth_error_is_retryable(self, code):
         coordinator = _make_coordinator(_first_load=True)
         coordinator._entry_data = {CONF_API_TOKEN: _mock_jwt_token_dict()}
         coordinator.api.load_jwt_token = AsyncMock(
-            side_effect=IECError(500, "server error")
+            side_effect=IECError(code, "temporary failure")
         )
 
         with (
@@ -148,23 +152,24 @@ class TestAsyncUpdateDataRetry:
                 "custom_components.iec.coordinator.asyncio.sleep", new=AsyncMock()
             ) as sleep,
             patch.object(coordinator, "_update_data", new=AsyncMock()) as update_data,
-            pytest.raises(IECError) as exc_info,
+            pytest.raises(UpdateFailed) as exc_info,
         ):
             await coordinator._async_update_data()
 
-        assert exc_info.value.code == 500
+        assert isinstance(exc_info.value.__cause__, IECError)
+        assert exc_info.value.__cause__.code == code
         coordinator.api.load_jwt_token.assert_awaited_once()
-        # Load path is not wrapped by the outer try: no reauth conversion, and
-        # _first_load stays True so the load is retried on the next cycle.
+        # Retry the initial load on the next cycle, without requesting an OTP.
         assert coordinator._first_load is True
         sleep.assert_not_called()
         update_data.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_check_token_non_auth_error_becomes_auth_failed(self):
+    @pytest.mark.parametrize("code", [-1, 429, 500, 503])
+    async def test_check_token_non_auth_error_is_retryable(self, code):
         coordinator = _make_coordinator(_first_load=False)
         coordinator.api.check_token = AsyncMock(
-            side_effect=IECError(500, "server error")
+            side_effect=IECError(code, "temporary failure")
         )
 
         with (
@@ -172,12 +177,85 @@ class TestAsyncUpdateDataRetry:
                 "custom_components.iec.coordinator.asyncio.sleep", new=AsyncMock()
             ) as sleep,
             patch.object(coordinator, "_update_data", new=AsyncMock()) as update_data,
+            pytest.raises(UpdateFailed) as exc_info,
+        ):
+            await coordinator._async_update_data()
+
+        assert isinstance(exc_info.value.__cause__, IECError)
+        assert exc_info.value.__cause__.code == code
+        coordinator.api.check_token.assert_awaited_once()
+        sleep.assert_not_called()
+        update_data.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("first_load", [False, True])
+    async def test_explicit_invalid_token_still_requires_reauth(self, first_load):
+        coordinator = _make_coordinator(_first_load=first_load)
+        coordinator._entry_data = {CONF_API_TOKEN: _mock_jwt_token_dict()}
+        operation = (
+            coordinator.api.load_jwt_token
+            if first_load
+            else coordinator.api.check_token
+        )
+        operation.side_effect = IECLoginError(-1, "Invalid JWT token")
+
+        with (
+            patch.object(coordinator, "_update_data", new=AsyncMock()) as update_data,
             pytest.raises(ConfigEntryAuthFailed),
         ):
             await coordinator._async_update_data()
 
-        coordinator.api.check_token.assert_awaited_once()
-        sleep.assert_not_called()
+        operation.assert_awaited_once()
+        update_data.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("first_load", [False, True])
+    async def test_transient_failure_recovers_on_next_update(self, first_load):
+        coordinator = _make_coordinator(_first_load=first_load)
+        coordinator._entry_data = {CONF_API_TOKEN: _mock_jwt_token_dict()}
+        operation = (
+            coordinator.api.load_jwt_token
+            if first_load
+            else coordinator.api.check_token
+        )
+        operation.side_effect = [IECError(-1, "DNS timeout"), None]
+
+        with patch.object(
+            coordinator, "_update_data", new=AsyncMock(return_value={})
+        ) as update_data:
+            with pytest.raises(UpdateFailed):
+                await coordinator._async_update_data()
+            update_data.assert_not_called()
+            result = await coordinator._async_update_data()
+
+        assert result == {}
+        assert operation.await_count == 2
+        assert coordinator._first_load is False
+        update_data.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("first_load", [False, True])
+    @pytest.mark.parametrize("code", [429, 500, 503])
+    async def test_okta_server_errors_do_not_require_reauth(self, first_load, code):
+        coordinator = _make_coordinator(_first_load=first_load)
+        coordinator._entry_data = {CONF_API_TOKEN: _mock_jwt_token_dict()}
+        operation = (
+            coordinator.api.load_jwt_token
+            if first_load
+            else coordinator.api.check_token
+        )
+        # Okta's errorSummary responses use IECLoginError even for non-auth HTTP codes.
+        operation.side_effect = IECLoginError(
+            code, "Temporary identity provider failure"
+        )
+
+        with (
+            patch.object(coordinator, "_update_data", new=AsyncMock()) as update_data,
+            pytest.raises(UpdateFailed),
+        ):
+            await coordinator._async_update_data()
+
+        operation.assert_awaited_once()
         update_data.assert_not_called()
 
     @pytest.mark.asyncio
@@ -224,9 +302,9 @@ class TestAsyncUpdateDataRetry:
             await coordinator._async_update_data()
 
         coordinator.hass.config_entries.async_update_entry.assert_called_once()
-        updated_data = coordinator.hass.config_entries.async_update_entry.call_args.kwargs[
-            "data"
-        ]
+        updated_data = (
+            coordinator.hass.config_entries.async_update_entry.call_args.kwargs["data"]
+        )
         assert updated_data == {
             "existing": "value",
             CONF_API_TOKEN: new_token.to_dict(),

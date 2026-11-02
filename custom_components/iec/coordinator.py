@@ -22,7 +22,7 @@ from iec_api.iec_client import IecClient
 from iec_api.models.contract import Contract
 from iec_api.models.device import Devices
 from iec_api.models.device_in import DeviceInDevice
-from iec_api.models.exceptions import IECError
+from iec_api.models.exceptions import IECError, IECLoginError
 from iec_api.models.jwt import JWT
 from iec_api.models.remote_reading import (
     FutureConsumptionInfo,
@@ -818,18 +818,17 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         self,
     ) -> dict[str, dict[str, Any]]:
         """Fetch data from API endpoint."""
-        # Add retry logic for token operations to handle transient DNS/resolution issues
-        if self._first_load:
-            _LOGGER.debug("Loading API token from config entry")
-            await self._run_token_operation_with_retry(
-                "load",
-                lambda: self.api.load_jwt_token(
-                    JWT.from_dict(self._entry_data[CONF_API_TOKEN])
-                ),
-            )
-
-        self._first_load = False
         try:
+            if self._first_load:
+                _LOGGER.debug("Loading API token from config entry")
+                await self._run_token_operation_with_retry(
+                    "load",
+                    lambda: self.api.load_jwt_token(
+                        JWT.from_dict(self._entry_data[CONF_API_TOKEN])
+                    ),
+                )
+                self._first_load = False
+
             _LOGGER.debug("Checking if API token needs to be refreshed")
             # First thing first, check the token and refresh if needed.
             old_token = self.api.get_token()
@@ -845,14 +844,22 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 )
                 self._entry_data = new_data
         except IECError as err:
-            if err.code in (400, 401):
+            if err.code in (400, 401) or (
+                isinstance(err, IECLoginError) and err.code == -1
+            ):
                 _LOGGER.error(
                     "IEC API authentication failed with code %d: %s. "
                     "Triggering reauth flow.",
                     err.code,
                     err,
                 )
-            raise ConfigEntryAuthFailed from err
+                raise ConfigEntryAuthFailed from err
+            # The API client wraps DNS failures, timeouts and invalid responses
+            # in IECError(-1). Server errors and rate limiting also do not mean
+            # the credentials were rejected. Let HA retry without requesting OTP.
+            raise UpdateFailed(
+                f"IEC API token operation failed (code {err.code})"
+            ) from err
 
         try:
             return await self._update_data()
