@@ -5,6 +5,6 @@
 # not used by these tests and was removed because it pins pytest == 9.0.3,
 # which conflicts with the pytest >= 9.1.1 update.
 pytest>=9.1.1,<10
-pytest-asyncio>=1.4.0
+pytest-asyncio>=1.4.1
 pytest-timeout>=2.4.0
 freezegun>=1.5.0
