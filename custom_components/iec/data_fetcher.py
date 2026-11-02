@@ -506,6 +506,8 @@ class IecDataFetcher:
                 )
                 if reading:
                     self._readings[key] = reading
+                else:
+                    reading = None
             except IECError:
                 _LOGGER.exception(
                     "Failed fetching reading for Contract: %s, "
@@ -514,7 +516,9 @@ class IecDataFetcher:
                     reading_date.strftime("%d-%m-%Y"),
                     resolution,
                 )
-        return reading
+                reading = None
+
+        return reading if reading is not _MISSING else None
 
     async def _verify_daily_readings_exist(
         self,
