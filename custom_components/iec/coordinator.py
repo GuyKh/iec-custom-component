@@ -833,7 +833,12 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             # First thing first, check the token and refresh if needed.
             old_token = self.api.get_token()
 
-            await self._run_token_operation_with_retry("check", self.api.check_token)
+            # Use a single attempt for check_token; if it fails with 401,
+            # the exception will be caught below and trigger reauth flow.
+            # We do NOT use _run_token_operation_with_retry here because
+            # that method'''s max_retries=2 causes the operation to run twice,
+            # leading to duplicate HTTP calls per action after reauth.
+            await self.api.check_token()
 
             new_token = self.api.get_token()
             if old_token != new_token:
