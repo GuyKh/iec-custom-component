@@ -29,9 +29,12 @@ def _coordinator(hass: HomeAssistant, *, first_load: bool) -> IecApiCoordinator:
         logging.getLogger(__name__),
         name="Iec",
         update_interval=timedelta(hours=1),
-        config_entry=entry,
     )
+    coordinator.config_entry = entry
     coordinator._config_entry = entry
+    coordinator._config_entry.async_start_reauth = AsyncMock()
+    coordinator._config_entry.async_start_reauth_if_available = AsyncMock()
+    coordinator._entry_data = {CONF_API_TOKEN: _mock_jwt_token_dict()}
     coordinator._entry_data = {CONF_API_TOKEN: _mock_jwt_token_dict()}
     coordinator._first_load = first_load
     coordinator.api = MagicMock()
