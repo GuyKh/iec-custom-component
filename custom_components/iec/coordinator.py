@@ -277,9 +277,17 @@ class IecApiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 mapped_bp_number = self._normalize_bp_number(
                     customer_mobile.customer.bp_number
                 )
-        except (IECError, ClientError, TimeoutError, AttributeError, TypeError) as err:
+        except (
+            IECError,
+            ClientError,
+            TimeoutError,
+            AttributeError,
+            TypeError,
+            ValueError,
+        ) as err:
             # Auth/refresh failures (IECError), network issues (ClientError/TimeoutError)
-            # and malformed IEC payloads (AttributeError/TypeError) are tolerated here:
+            # and malformed IEC payloads (AttributeError/TypeError/ValueError, e.g.
+            # mashumaro InvalidFieldValue when the API drops a field) are tolerated here:
             # bp_number resolution is best-effort with graceful fallbacks below.
             _LOGGER.debug(
                 "Failed resolving bp_number for contract %s via customer_mobile: %s",
