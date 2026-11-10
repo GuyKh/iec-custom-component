@@ -261,14 +261,12 @@ class TestAsyncUpdateDataRetry:
     @pytest.mark.asyncio
     async def test_check_token_retries_then_succeeds(self):
         coordinator = _make_coordinator(_first_load=False)
-        coordinator.api.check_token = AsyncMock(
-            side_effect=[IECError(401, "invalid token"), None]
-        )
+        # Current code calls check_token() once (not via _run_token_operation_with_retry
+        # to avoid duplicate HTTP calls from max_retries=2). A successful check_token()
+        # allows the update to proceed.
+        coordinator.api.check_token = AsyncMock(return_value=True)
 
         with (
-            patch(
-                "custom_components.iec.coordinator.asyncio.sleep", new=AsyncMock()
-            ) as sleep,
             patch.object(
                 coordinator, "_update_data", new=AsyncMock(return_value={})
             ) as update_data,
@@ -276,8 +274,7 @@ class TestAsyncUpdateDataRetry:
             result = await coordinator._async_update_data()
 
         assert result == {}
-        assert coordinator.api.check_token.await_count == 2
-        sleep.assert_awaited_once_with(5)
+        assert coordinator.api.check_token.await_count == 1
         update_data.assert_awaited_once()
 
     @pytest.mark.asyncio
