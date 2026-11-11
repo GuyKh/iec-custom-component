@@ -35,6 +35,7 @@ except ImportError:
         ARITHMETIC = "arithmetic"
         CIRCULAR = "circular"
 
+
 _LOGGER = logging.getLogger(__name__)
 
 

@@ -159,9 +159,7 @@ class IecDataFetcher:
         contracts = self._contracts_by_bp_number.get(bp_number, _MISSING)
         if contracts is _MISSING:
             try:
-                contracts = await self._api_call(
-                    self.api.get_contracts(bp_number)
-                )
+                contracts = await self._api_call(self.api.get_contracts(bp_number))
             except IECError:
                 _LOGGER.exception(
                     "Failed fetching contracts for BP number %s",
@@ -172,16 +170,12 @@ class IecDataFetcher:
 
         for contract in contracts or []:
             if contract.contract_id and int(contract.contract_id) == contract_id:
-                return (
-                    "Backstream" if contract.producer_type == 1 else "Consumption"
-                )
+                return "Backstream" if contract.producer_type == 1 else "Consumption"
         return "Consumption"
 
     def _get_bp_number_for_contract(self, contract_id: int) -> str | None:
         """Return the BP number associated with a contract id."""
-        bp_number_to_contract = self._config_entry.data.get(
-            CONF_BP_NUMBER_TO_CONTRACT
-        )
+        bp_number_to_contract = self._config_entry.data.get(CONF_BP_NUMBER_TO_CONTRACT)
         if isinstance(bp_number_to_contract, dict):
             for bp_number, contract_ids in bp_number_to_contract.items():
                 if contract_id in {int(c) for c in contract_ids}:
