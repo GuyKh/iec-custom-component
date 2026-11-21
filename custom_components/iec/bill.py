@@ -184,6 +184,10 @@ def _get_invoice_reading_dates(
       (full_date + 1 day), where full_date <= today. IEC only returns real
       (non-zeroed) export data for the current period when lastInvoiceDate is
       set to this value; sending the period start zeroes it out.
+      When fullDate (the document date) is earlier than the invoice's toDate
+      (the end of the billed period), it is the day after toDate instead:
+      IEC answers every RemoteReadingRange call with HTTP 500 when
+      lastInvoiceDate falls inside an already-billed period (#590).
     - from_date: The toDate of the next invoice after that (or today if none
       exists).
     """
@@ -204,8 +208,14 @@ def _get_invoice_reading_dates(
     for i, invoice in enumerate(sorted_invoices):
         full_date = invoice.full_date
         if full_date and full_date.date() <= today:
+            last_billed_day = full_date.date()
+            period_end = invoice.to_date
+            if isinstance(period_end, datetime):
+                period_end = period_end.date()
+            if isinstance(period_end, date) and period_end > last_billed_day:
+                last_billed_day = period_end
             last_invoice_date_obj = datetime.combine(
-                full_date.date() + timedelta(days=1), time.min
+                last_billed_day + timedelta(days=1), time.min
             )
             if i + 1 < len(sorted_invoices):
                 to_date = sorted_invoices[i + 1].to_date
