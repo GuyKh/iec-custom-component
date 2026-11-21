@@ -261,7 +261,8 @@ class TestGetInvoiceReadingDates:
     Invoices whose fullDate is in the future are ignored; the from_date is the
     to_date of the next older invoice (or today when none exists). The
     last_invoice_date sent to IEC is fullDate + 1 day, which is the only value
-    that returns real (non-zeroed) export data for the current period.
+    that returns real (non-zeroed) export data for the current period, unless
+    toDate is later than fullDate: then it is toDate + 1 day (#590).
     """
 
     def test_empty_invoices(self):
@@ -276,7 +277,8 @@ class TestGetInvoiceReadingDates:
         invoice.full_date = datetime(2024, 6, 1)
         invoice.to_date = datetime(2024, 6, 10)
         last_date, from_date = _get_invoice_reading_dates([invoice])
-        assert last_date == datetime(2024, 6, 2, 0, 0)
+        # toDate is later than fullDate, so the day after toDate (#590).
+        assert last_date == datetime(2024, 6, 11, 0, 0)
         assert from_date == datetime(2024, 6, 15, 0, 0)
 
     @freeze_time("2024-03-15")
@@ -287,7 +289,8 @@ class TestGetInvoiceReadingDates:
         current.full_date = datetime(2024, 3, 1)
         current.to_date = datetime(2024, 3, 10)
         last_date, from_date = _get_invoice_reading_dates([future, current])
-        assert last_date == datetime(2024, 3, 2, 0, 0)
+        # toDate is later than fullDate, so the day after toDate (#590).
+        assert last_date == datetime(2024, 3, 11, 0, 0)
         assert from_date == datetime(2024, 3, 15, 0, 0)
 
     @freeze_time("2024-06-15")
@@ -343,6 +346,37 @@ class TestGetInvoiceReadingDates:
         last_date, from_date = _get_invoice_reading_dates([current, next_invoice])
         assert last_date == datetime(2024, 3, 2, 0, 0)
         assert from_date == datetime(2024, 6, 15, 0, 0)  # falls back to today
+
+    @freeze_time("2026-11-20")
+    def test_full_date_inside_billed_period_uses_day_after_period_end(self):
+        """Contract (#590): lastInvoiceDate must not fall inside the billed period.
+
+        IEC answers RemoteReadingRange with HTTP 500 when it does; this happens
+        when fullDate (document date) is earlier than toDate (period end).
+        """
+        invoice = MagicMock()
+        invoice.full_date = datetime(2026, 11, 1)
+        invoice.to_date = datetime(2026, 11, 17)
+        last_date, _ = _get_invoice_reading_dates([invoice])
+        assert last_date == datetime(2026, 11, 18, 0, 0)
+
+    @freeze_time("2026-11-20")
+    def test_full_date_after_period_end_keeps_full_date_plus_one(self):
+        """Contract: when fullDate is on or after toDate, fullDate + 1 is unchanged."""
+        invoice = MagicMock()
+        invoice.full_date = datetime(2026, 11, 3)
+        invoice.to_date = datetime(2026, 11, 2)
+        last_date, _ = _get_invoice_reading_dates([invoice])
+        assert last_date == datetime(2026, 11, 4, 0, 0)
+
+    @freeze_time("2026-11-20")
+    def test_plain_date_period_end_is_compared_as_date(self):
+        """Contract: a plain date toDate is handled like a datetime one."""
+        invoice = MagicMock()
+        invoice.full_date = datetime(2026, 11, 1)
+        invoice.to_date = date(2026, 11, 17)
+        last_date, _ = _get_invoice_reading_dates([invoice])
+        assert last_date == datetime(2026, 11, 18, 0, 0)
 
 
 class TestExtractValidFutureConsumption:
